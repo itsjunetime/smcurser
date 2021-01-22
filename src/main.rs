@@ -8,7 +8,6 @@ mod messages_view;
 
 use std::sync::{Arc, RwLock};
 use lazy_static::*;
-use crate::colorscheme::Colorscheme;
 use settings::*;
 use api_client_mod::*;
 use main_app::*;

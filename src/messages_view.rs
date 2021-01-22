@@ -4,7 +4,7 @@ use tui::{
     layout::Rect,
     text::{Span, Spans},
     widgets::{Block, Borders, Paragraph, BorderType},
-	style::{Style, Color},
+	style::{Style, Color, Modifier},
 	terminal::Frame,
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,6 +13,7 @@ pub struct MessagesView {
 	pub scroll: u16,
 	pub messages: Vec<Message>,
 	pub messages_list: Vec<String>,
+	pub line_color_map: Vec<Style>,
 	pub last_width: u16,
 	pub last_height: u16,
 	pub total_height: u32,
@@ -24,6 +25,7 @@ impl MessagesView {
 			scroll: 0,
 			messages: Vec::new(),
 			messages_list: Vec::new(),
+			line_color_map: Vec::new(),
 			last_width: 0,
 			last_height: 0,
 			total_height: 0,
@@ -40,19 +42,16 @@ impl MessagesView {
 			}
 
 			let item_list: Vec<Spans> = self.messages_list.iter()
-				.map(|m| Spans::from(vec![Span::raw(m.as_str())]))
+				.enumerate()
+				.map(|(i, m)| Spans::from(vec![Span::styled(m.as_str(), self.line_color_map[i])]))
 				.collect();
 
 			// this will serve as the border for the messages widget
-			let mut messages_border = Block::default()
+			let messages_border = Block::default()
 				.borders(Borders::ALL)
 				.title(set.messages_title.as_str())
-				.border_type(BorderType::Rounded);
-
-			// if it's selected, color it correctly
-			if is_selected {
-				messages_border = messages_border.border_style(Style::default().fg(Color::Blue));
-			}
+				.border_type(BorderType::Rounded)
+				.border_style(Style::default().fg(if is_selected { set.colorscheme.selected_box } else { set.colorscheme.unselected_box }));
 
 			// create the widget and scroll it to the correct location
 			let mut messages_widget = Paragraph::new(item_list).block(messages_border);
@@ -70,6 +69,9 @@ impl MessagesView {
 
 			let mut last_timestamp = 0;
 			let mut total_msg_height = 0;
+			let mut last_sender = "".to_string();
+
+			let mut lcm_temp = Vec::new();
 
 			// This gets a vector of spans for all the messages. It handles stuff like
 			// inserting the time when necessary, adding the underlines, splitting the
@@ -86,7 +88,27 @@ impl MessagesView {
 								"".to_string(),
 							];
 							vec.append(&mut spans);
+
+							lcm_temp.append(&mut vec![Style::default().fg(set.colorscheme.text_color); 3]);
+
 							total_msg_height += 3;
+						}
+
+						if let Some(send) = &msg.sender {
+							if *send != last_sender || msg.date - last_timestamp >= 3600000000000 {
+								if msg.date - last_timestamp < 3600000000000 {
+									vec.push("".to_string());
+									lcm_temp.push(Style::default());
+									total_msg_height += 1;
+								}
+
+								vec.push(send.to_string());
+								lcm_temp.push(Style::default().add_modifier(Modifier::ITALIC | Modifier::BOLD));
+
+								total_msg_height += 1;
+							}
+
+							last_sender = send.as_str().to_string();
 						}
 
 						last_timestamp = msg.date;
@@ -109,6 +131,8 @@ impl MessagesView {
 						let mut lines: Vec<String> = text_lines.into_iter()
 							.map(|l| {
 								total_msg_height += 1;
+								lcm_temp.push(Style::default().fg(set.colorscheme.text_color));
+
 								if msg.is_from_me { format!("{}{}", " ".repeat(space), l) }
 								else { l }
 							})
@@ -122,6 +146,10 @@ impl MessagesView {
 							set.chat_underline.as_str().repeat(max)
 						);
 
+						lcm_temp.push(Style::default().fg(
+								if msg.is_from_me { set.colorscheme.my_underline } else { set.colorscheme.their_underline }
+							));
+
 						vec.push(underline);
 						total_msg_height += 1;
 
@@ -129,6 +157,7 @@ impl MessagesView {
 					}
 				);
 
+			self.line_color_map = lcm_temp;
 			self.total_height = total_msg_height;
 
 		}
@@ -154,16 +183,41 @@ impl MessagesView {
 	}
 	
 	pub fn new_text(&mut self, msg: &Message) {
-		let last_timestamp = self.messages.last().unwrap().date;
+		let last = self.messages.last();
 
-		if msg.date - last_timestamp >= 3600000000000 {
-			let mut spans = vec![
-				"".to_string(),
-				Settings::date_pad_string(msg.date, self.last_width as usize - 2),
-				"".to_string(),
-			];
-			self.messages_list.append(&mut spans);
-			self.total_height += 3;
+		let last_timestamp = match last {
+			None => 0,
+			Some(val) => val.date,
+		};
+
+		if let Ok(set) = SETTINGS.read() {
+			if msg.date - last_timestamp >= 3600000000000 {
+				let mut spans = vec![
+					"".to_string(),
+					Settings::date_pad_string(msg.date, self.last_width as usize - 2),
+					"".to_string(),
+				];
+				self.messages_list.append(&mut spans);
+
+				self.line_color_map.append(&mut vec![Style::default().fg(set.colorscheme.text_color); 3]);
+
+				self.total_height += 3;
+			}
+		}
+
+		if let Some(send) = &msg.sender {
+			if last.is_none() || send != last.unwrap().sender.as_ref().unwrap() || msg.date - last_timestamp >= 3600000000000 {
+				if msg.date - last_timestamp < 3600000000000 {
+					self.messages_list.push("".to_string());
+					self.line_color_map.push(Style::default());
+					self.total_height += 1;
+				}
+
+				self.messages_list.push(send.to_string());
+				self.line_color_map.push(Style::default().add_modifier(Modifier::ITALIC | Modifier::BOLD));
+
+				self.total_height += 1;
+			}
 		}
 
 		let opts = textwrap::Options::new(((self.last_width - 2) as f64 * 0.6) as usize);
@@ -183,22 +237,28 @@ impl MessagesView {
 		let space = self.last_width as usize - 2 - max;
 
 		// add padding for my texts, put into spans
-		let mut lines: Vec<String> = text_lines.into_iter()
-			.map(|l| {
-				self.total_height += 1;
-				if msg.is_from_me { format!("{}{}", " ".repeat(space), l) }
-				else { l }
-			})
-			.collect();
-
-		self.messages_list.append(&mut lines);
-
-		// add underline so it's pretty
 		if let Ok(set) = SETTINGS.read() {
+			let mut lines: Vec<String> = text_lines.into_iter()
+				.map(|l| {
+					self.total_height += 1;
+					self.line_color_map.push(Style::default().fg(set.colorscheme.text_color));
+
+					if msg.is_from_me { format!("{}{}", " ".repeat(space), l) }
+					else { l }
+				})
+				.collect();
+
+			self.messages_list.append(&mut lines);
+
+			// add underline so it's pretty
 			let underline = format!("{}{}",
 				if msg.is_from_me { " ".repeat(space) } else { "".to_string() },
 				set.chat_underline.as_str().repeat(max)
 			);
+
+			self.line_color_map.push(Style::default().fg(
+					if msg.is_from_me { set.colorscheme.my_underline } else { set.colorscheme.their_underline }
+				));
 
 			self.messages_list.push(underline);
 			self.total_height += 1;

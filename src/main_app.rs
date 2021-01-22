@@ -4,22 +4,21 @@ use crate::chats_view::*;
 use crate::messages_view::*;
 use std::{
 	vec::Vec,
-	io::{Stdout, prelude::*},
-	net::TcpListener,
+	io::Stdout,
 	thread::spawn,
-	fs::File,
 };
 use core::time::Duration;
 use tui::{
 	layout::{Constraint, Direction, Layout},
 	text::{Span, Spans},
 	widgets::{Block, Borders, Paragraph, Wrap, BorderType},
+	style::Style,
 };
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 
 pub struct MainApp {
 	input_str: String,
-	help_msg: String,
+	hint_msg: String,
 	right_offset: i32, // cursor offset from the right side of the input string
 	input_left_start: i32, // what index of the input string appears at the start of the input box
 	last_selected: Option<usize>,
@@ -34,7 +33,7 @@ impl MainApp {
 	pub fn new() -> MainApp {
 		MainApp {
 			input_str: String::from(""),
-			help_msg: String::from("type :h to get help :)"),
+			hint_msg: String::from("type :h to get help :)"),
 			right_offset: 0,
 			input_left_start: 0,
 			last_selected: None,
@@ -149,13 +148,14 @@ impl MainApp {
 									.title(set.input_title.as_str())
 									.borders(Borders::ALL)
 									.border_type(BorderType::Rounded)
+									.border_style(Style::default().fg(set.colorscheme.unselected_box))
 							);
 						f.render_widget(input_widget, main_layout[1]);
 
 						f.set_cursor(self.input_str.len() as u16 + 1 - self.right_offset as u16, size.height - 3);
 
 						// create a span for the help box add the help string
-						let help_span = vec![Spans::from(vec![Span::raw(self.help_msg.as_str())])];
+						let help_span = vec![Spans::from(vec![Span::styled(self.hint_msg.as_str(), Style::default().fg(set.colorscheme.hints_box))])];
 						let help_widget = Paragraph::new(help_span);
 						f.render_widget(help_widget, main_layout[2]);
 					}
@@ -180,7 +180,10 @@ impl MainApp {
 					false
 				};
 
-				if new_text { self.load_in_text(); }
+				if new_text { 
+					self.load_in_text(); 
+					break;
+				}
 			} else {
 				match read()? {
 					Event::Key(event) => {
@@ -212,7 +215,7 @@ impl MainApp {
 							// easy way to cancel what you're typing
 							KeyCode::Esc => {
 								self.input_str = "".to_string();
-								self.help_msg = "Command cancelled".to_string();
+								self.hint_msg = "Command cancelled".to_string();
 							},
 							// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
 							// for people to invoke it to exit if that's what they're used to.
@@ -276,10 +279,10 @@ impl MainApp {
 					let index = splits[0].parse::<usize>();
 					match index {
 						Ok(idx) => self.load_in_conversation(idx),
-						Err(_) => self.help_msg = format!("Cannot convert {} to an int", splits[0]),
+						Err(_) => self.hint_msg = format!("Cannot convert {} to an int", splits[0]),
 					}
 				} else {
-					self.help_msg = "Please insert an index".to_string();
+					self.hint_msg = "Please insert an index".to_string();
 				}
 			},
 			":h" | ":H" => { 
@@ -289,7 +292,7 @@ impl MainApp {
 				let cmd = splits.join("%20"); // rust why :(
 				self.send_text(Some(cmd), None);
 			}
-			x => self.help_msg = format!("Command {} not recognized", x),
+			x => self.hint_msg = format!("Command {} not recognized", x),
 		};
 
 		self.input_str = "".to_string();
@@ -309,7 +312,7 @@ impl MainApp {
 			DisplayBox::Chats => self.chats_view.scroll(up, distance),
 			DisplayBox::Messages => self.messages_view.scroll(up, distance),
 			_ => {
-				self.help_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
+				self.hint_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
 			},
 		}
 	}
@@ -324,7 +327,7 @@ impl MainApp {
 
 			self.last_selected = Some(idx);
 		} else {
-			self.help_msg = format!("{} is out of range for the chats", idx);
+			self.hint_msg = format!("{} is out of range for the chats", idx);
 		}
 	}
 
@@ -333,7 +336,7 @@ impl MainApp {
 			let text = match &set.new_text {
 				Some(t) => Message::from_json(&t),
 				None => {
-					self.help_msg = "You got a new text but we can't parse it, sorry...".to_string();
+					self.hint_msg = "You got a new text but we can't parse it, sorry...".to_string();
 					return;
 				},
 			};
@@ -343,7 +346,7 @@ impl MainApp {
 			let id = match &text.chat_identifier {
 				Some(c) => c,
 				None => {
-					self.help_msg = "You got a new text but it has no chat_identifier... sorry".to_string();
+					self.hint_msg = "You got a new text but it has no chat_identifier... sorry".to_string();
 					return;
 				},
 			};
@@ -368,7 +371,7 @@ impl MainApp {
 			let sent = APICLIENT.read().unwrap()
 				.send_text(text, None, id, Some(in_files), None);
 
-			self.help_msg = (if sent { "text sent :)" } else { "text not sent :(" }).to_string();
+			self.hint_msg = (if sent { "text sent :)" } else { "text not sent :(" }).to_string();
 		}
 	}
 }

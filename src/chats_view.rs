@@ -43,23 +43,33 @@ impl ChatsView {
 
 			let item_list: Vec<Spans> = self.chats_list.iter()
 				.fold(Vec::new(), |mut s, c| {
+					let (num, rest) = c.split_at(4); // that's where the symbol will be
+					let symbol = rest.chars().nth(0).unwrap();
+
+					let spans = vec![
+						Span::styled(num, Style::default().fg(set.colorscheme.text_color)),
+						match symbol {
+							'>' => Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.chat_indicator)),
+							'•' => Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.unread_indicator)),
+							_ => Span::raw(" "),
+						},
+						Span::styled(rest.replacen(symbol, "", 1), Style::default().fg(set.colorscheme.text_color)),
+					];
+
 					s.push(Spans::from(vec![Span::raw("")]));
-					s.push(Spans::from(vec![Span::raw(c.as_str())]));
+					s.push(Spans::from(spans));
 					s
 				});
 
-			let mut chats_border = Block::default()
+			let chats_border = Block::default()
 				.borders(Borders::ALL)
 				.title(set.chats_title.as_str())
-				.border_type(BorderType::Rounded);
-			if is_selected {
-				chats_border = chats_border.border_style(Style::default().fg(Color::Magenta));
-			}
+				.border_type(BorderType::Rounded)
+				.border_style(Style::default().fg(if is_selected { set.colorscheme.selected_box } else { set.colorscheme.unselected_box }));
 
 			let chats_widget = Paragraph::new(item_list)
 				.block(chats_border)
 				.scroll((self.scroll * 2, 0));
-
 
 			frame.render_widget(chats_widget, rect);
 		}
