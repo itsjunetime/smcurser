@@ -2,16 +2,20 @@ use models::*;
 use crate::*;
 use crate::chats_view::*;
 use crate::messages_view::*;
-use std::vec::Vec;
-use std::io;
-use tui::{
-    layout::{Constraint, Direction, Layout},
-    text::{Span, Spans, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap, BorderType},
-	style::{Style, Color},
+use std::{
+	vec::Vec,
+	io::{Stdout, prelude::*},
+	net::TcpListener,
+	thread::spawn,
+	fs::File,
 };
-use crossterm::event::{read, Event, KeyCode, KeyModifiers};
-use unicode_segmentation::UnicodeSegmentation;
+use core::time::Duration;
+use tui::{
+	layout::{Constraint, Direction, Layout},
+	text::{Span, Spans},
+	widgets::{Block, Borders, Paragraph, Wrap, BorderType},
+};
+use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 
 pub struct MainApp {
 	input_str: String,
@@ -42,7 +46,41 @@ impl MainApp {
 		}
 	}
 
-	pub fn main_loop(&mut self, term: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<(), io::Error> {
+	pub fn main_loop(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
+
+		let set = SETTINGS.read().unwrap();
+		let server = format!("ws{}://{}:{}", if set.secure { "s" } else { "" }, set.host, set.socket_port);
+		drop(set);
+
+		spawn(move || {
+			let (mut socket, _) =
+				tungstenite::connect(url::Url::parse(server.as_str()).unwrap()).expect("Can't connect to websocket :(");
+
+			loop {
+				let msg = socket.read_message().expect("Error reading websocket message");
+				match msg {
+					tungstenite::Message::Text(val) => {
+						let mut splits = val.splitn(2, ':');
+						let prefix = splits.next().unwrap();
+						let content = splits.next().unwrap();
+
+						match prefix {
+							"text" => {
+								let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+								let text_json: serde_json::Map<String, serde_json::Value> = json["text"].as_object().unwrap().to_owned();
+
+								if let Ok(mut set) = SETTINGS.write() {
+									set.new_text = Some(text_json);
+								}
+							},
+							&_ => (),
+						}
+					},
+					_ => (),
+				}
+			}
+		});
+
 		let _ = crossterm::terminal::enable_raw_mode();
 
 		// draw, get input, redraw with new state, get input, etc.
@@ -57,7 +95,7 @@ impl MainApp {
 		Ok(())
 	}
 
-	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<(), io::Error> {
+	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
 		// gotta make sure we can actually access the settings
 		if let Ok(set) = SETTINGS.read() {
 
@@ -106,7 +144,12 @@ impl MainApp {
 						// create a span for the input box and add the border
 						let input_span = vec![Spans::from(vec![Span::raw(self.input_str.as_str())])];
 						let input_widget = Paragraph::new(input_span)
-							.block(Block::default().title(set.input_title.as_str()).borders(Borders::ALL));
+							.block(
+								Block::default()
+									.title(set.input_title.as_str())
+									.borders(Borders::ALL)
+									.border_type(BorderType::Rounded)
+							);
 						f.render_widget(input_widget, main_layout[1]);
 
 						f.set_cursor(self.input_str.len() as u16 + 1 - self.right_offset as u16, size.height - 3);
@@ -126,59 +169,86 @@ impl MainApp {
 	fn get_input(&mut self) -> crossterm::Result<()> {
 		// we have to loop this so that if it gets a character/input we don't want,
 		// we can just grab the next character/input instead.
+
+		let mut distance = "".to_string();
+
 		loop {
-			match read()? {
-				Event::Key(event) => {
-					match event.code {
-						KeyCode::Backspace => {
-							if self.input_str.len() > 0 {
-								let index = self.input_str.len() as i32 - self.right_offset - 1;
-								if index > -1 { self.input_str.remove(index as usize); }
-							}
-						},
-						KeyCode::Enter => if self.input_str.len() > 0 { self.handle_full_input() },
-						// left and right move the cursor if there's input in the box, else they
-						// just switch which box is selected
-						KeyCode::Left | KeyCode::Right => {
-							if self.input_str.len() > 0 {
-								if let KeyCode::Left = event.code {
-									self.right_offset = std::cmp::min(self.input_str.len() as i32, self.right_offset + 1);
-								} else {
-									self.right_offset = std::cmp::max(0, self.right_offset - 1);
+			if !poll(Duration::from_millis(20)).unwrap() {
+				let new_text = if let Ok(set) = SETTINGS.read() {
+					set.new_text.is_some()
+				} else {
+					false
+				};
+
+				if new_text { self.load_in_text(); }
+			} else {
+				match read()? {
+					Event::Key(event) => {
+						match event.code {
+							KeyCode::Backspace => {
+								if self.input_str.len() > 0 {
+									let index = self.input_str.len() as i32 - self.right_offset - 1;
+									if index > -1 { self.input_str.remove(index as usize); }
 								}
-							} else {
-								self.switch_selected_box();
+							},
+							KeyCode::Enter => if self.input_str.len() > 0 { self.handle_full_input() },
+							// left and right move the cursor if there's input in the box, else they
+							// just switch which box is selected
+							KeyCode::Left | KeyCode::Right => {
+								if self.input_str.len() > 0 {
+									if let KeyCode::Left = event.code {
+										self.right_offset = std::cmp::min(self.input_str.len() as i32, self.right_offset + 1);
+									} else {
+										self.right_offset = std::cmp::max(0, self.right_offset - 1);
+									}
+								} else {
+									self.switch_selected_box();
+								}
+							},
+							// will add tab completion for file selection later
+							KeyCode::Tab => if self.input_str.len() > 0 { 
+								self.input_str.push_str("	"); 
+							},
+							// easy way to cancel what you're typing
+							KeyCode::Esc => {
+								self.input_str = "".to_string();
+								self.help_msg = "Command cancelled".to_string();
+							},
+							// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
+							// for people to invoke it to exit if that's what they're used to.
+							KeyCode::Char(c) => {
+								if event.modifiers == KeyModifiers::CONTROL && c == 'c' {
+									self.quit_app = true;
+								} else if c.is_digit(10) && self.input_str.len() == 0 {
+
+									// test for digits to allow for vim-like scrolling, multiple lines
+									// at once.
+									distance = format!("{}{}", distance, c);
+									continue;
+
+								} else {
+									let dist: u16 = if distance.len() == 0 {
+										1
+									} else {
+										distance.parse().unwrap_or_else(|_| 1 )
+									};
+
+									self.handle_input_char(c, dist);
+								}
 							}
-						},
-						// will add tab completion for file selection later
-						KeyCode::Tab => if self.input_str.len() > 0 { 
-							self.input_str.push_str("	"); 
-						},
-						// easy way to cancel what you're typing
-						KeyCode::Esc => {
-							self.input_str = "".to_string();
-							self.help_msg = "Command cancelled".to_string();
-						},
-						// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
-						// for people to invoke it to exit if that's what they're used to.
-						KeyCode::Char(c) => {
-							if event.modifiers == KeyModifiers::CONTROL && c == 'c' {
-								self.quit_app = true;
-							} else {
-								self.handle_input_char(c);
-							}
-						}
-						_ => continue,
-					};
-					break
-				},
-				_ => continue,
+							_ => continue,
+						};
+						break
+					},
+					_ => continue,
+				}
 			}
 		}
+
 		Ok(())
 	}
 
-	fn handle_input_char(&mut self, ch: char) {
+	fn handle_input_char(&mut self, ch: char, distance: u16) {
 		if self.input_str.len() > 0 || ch == ':' {
 			self.input_str.insert(self.input_str.len() - self.right_offset as usize, ch);
 		} else {
@@ -189,7 +259,7 @@ impl MainApp {
 					self.selected_box = DisplayBox::Chats;
 				},
 				// scroll up or down in the selected box
-				'k' | 'j' => self.scroll(ch == 'j'),
+				'k' | 'j' => self.scroll(ch == 'j', distance),
 				// will add more later
 				_ => return,
 			}
@@ -234,10 +304,10 @@ impl MainApp {
 		}
 	}
 
-	fn scroll(&mut self, up: bool) {
+	fn scroll(&mut self, up: bool, distance: u16) {
 		match self.selected_box {
-			DisplayBox::Chats => self.chats_view.scroll(up),
-			DisplayBox::Messages => self.messages_view.scroll(up),
+			DisplayBox::Chats => self.chats_view.scroll(up, distance),
+			DisplayBox::Messages => self.messages_view.scroll(up, distance),
 			_ => {
 				self.help_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
 			},
@@ -255,6 +325,38 @@ impl MainApp {
 			self.last_selected = Some(idx);
 		} else {
 			self.help_msg = format!("{} is out of range for the chats", idx);
+		}
+	}
+
+	fn load_in_text(&mut self) {
+		if let Ok(set) = SETTINGS.read() {
+			let text = match &set.new_text {
+				Some(t) => Message::from_json(&t),
+				None => {
+					self.help_msg = "You got a new text but we can't parse it, sorry...".to_string();
+					return;
+				},
+			};
+
+			self.chats_view.new_text(&text);
+
+			let id = match &text.chat_identifier {
+				Some(c) => c,
+				None => {
+					self.help_msg = "You got a new text but it has no chat_identifier... sorry".to_string();
+					return;
+				},
+			};
+
+			if let Some(idx) = self.last_selected {
+				if *id == self.chats_view.chats[idx].chat_identifier {
+					self.messages_view.new_text(&text);
+				}
+			}
+		}
+
+		if let Ok(mut set) = SETTINGS.write() {
+			set.new_text = None;
 		}
 	}
 

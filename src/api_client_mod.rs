@@ -41,7 +41,11 @@ impl APIClient {
 			Ok(val) => val.to_string().parse().unwrap_or_else(|_| false),
 		};
 
-		if got_auth { SETTINGS.write().unwrap().authenticated = true; }
+		if got_auth { 
+			if let Ok(mut set) = SETTINGS.write() {
+				set.authenticated = true; 
+			}
+		}
 
 		got_auth
 	}

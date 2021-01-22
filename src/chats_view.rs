@@ -1,13 +1,12 @@
 use crate::*;
 use crate::models::*;
 use tui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    text::{Span, Spans, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap, BorderType},
+    layout::Rect,
+    text::{Span, Spans},
+    widgets::{Block, Borders, Paragraph, BorderType},
 	style::{Style, Color},
 	terminal::Frame,
 };
-use unicode_segmentation::UnicodeSegmentation;
 
 pub struct ChatsView {
 	pub scroll: u16,
@@ -72,8 +71,8 @@ impl ChatsView {
 		self.chats_list = self.chats.iter()
 			.enumerate()
 			.map(|(i, c)| {
-				let symbol = if c.is_selected { " > " } else {
-					if c.has_unread { " • " } else { "   " }
+				let symbol = if c.is_selected { ">" } else {
+					if c.has_unread { "•" } else { " " }
 				};
 
 				let name = if c.display_name.len() > max_len {
@@ -90,16 +89,16 @@ impl ChatsView {
 					l
 				); // I'm just gonna hope that nobody is going 1000 chats deep lol
 
-				format!("{}{}{}", idx, symbol, name)
+				format!("{} {} {}", idx, symbol, name)
 			})
 			.collect();
 	}
 
-	pub fn scroll(&mut self, up: bool) {
-		if up && self.scroll < self.chats.len() as u16 {
-			self.scroll += 1;
-		} else if !up && self.scroll > 0 {
-			self.scroll -= 1;
+	pub fn scroll(&mut self, up: bool, distance: u16) {
+		if up {
+			self.scroll = std::cmp::min(self.scroll + distance, self.chats.len() as u16);
+		} else {
+			self.scroll = std::cmp::max(self.scroll as i32 - distance as i32, 0) as u16;
 		}
 	}
 
@@ -112,6 +111,20 @@ impl ChatsView {
 		chat.has_unread = false;
 		chat.is_selected = true;
 
+		self.last_selected = Some(idx);
 		self.last_height = 0; // kinda dirty trick to force it to redraw the list next time
+	}
+
+	pub fn new_text(&mut self, item: &Message) {
+		if let Some(id) = &item.chat_identifier {
+			let chat = self.chats.iter().position(|c| c.chat_identifier == *id);
+
+			if let Some(idx) = chat {
+				let mut old_chat = self.chats.remove(idx);
+				old_chat.has_unread = true;
+
+				self.chats.insert(0, old_chat);
+			}
+		}
 	}
 }

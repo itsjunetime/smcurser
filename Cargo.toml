@@ -20,3 +20,5 @@ unicode-segmentation = "1.7.1"
 chrono = "0.4.19"
 multipart = "0.17.1"
 mime_guess = "2.0.3"
+tungstenite = { version = "0.12.0", features = ["tls"] }
+url = "2.2.0"

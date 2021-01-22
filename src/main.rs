@@ -70,4 +70,3 @@ const HELP_MSG: [&str; 28] = ["COMMANDS:",
 ":n, :N, new - ",
 "this shows a new composition box, from which you can send a text to a new conversation (or to a conversation that you can\'t quickly access. Type in the recipient(s), then hit enter, and you\'ll be able to enter the body of the message. Once you enter the body, you won\'t be able to change the recipients. Hit ctrl+g to send the text.",
 "if characters are not appearing, or the program is acting weird, just type a bunch of random characters and hit enter. No harm will be done for a bad command. For more information, visit: https://github.com/iandwelker/smserver_receiver"];
-

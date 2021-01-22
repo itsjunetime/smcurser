@@ -49,13 +49,13 @@ pub struct Message {
 	pub associated_message_guid: String,
 	pub associated_message_type: i16,
 	pub sender: Option<String>,
+	pub chat_identifier: Option<String>,
 }
 
 impl Message {
 	pub fn from_json(val: &serde_json::Map<String, serde_json::Value>) -> Message {
 		Message {
 			guid: val["guid"].as_str().unwrap().to_owned(),
-			date_read: val["date_read"].as_i64().unwrap(),
 			date: val["date"].as_i64().unwrap(),
 			balloon_bundle_id: val["balloon_bundle_id"].as_str().unwrap().to_owned(),
 			cache_has_attachments: val["cache_has_attachments"].as_bool().unwrap(),
@@ -65,10 +65,20 @@ impl Message {
 			text: val["text"].as_str().unwrap().to_owned(),
 			associated_message_guid: val["associated_message_guid"].as_str().unwrap().to_owned(),
 			associated_message_type: val["associated_message_type"].as_i64().unwrap() as i16,
+			date_read: if val.contains_key("date_read") {
+				val["date_read"].as_i64().unwrap()
+			} else {
+				0
+			},
 			sender: if val.contains_key("sender") { 
 				Some(val["sender"].as_str().unwrap().to_owned()) 
 			} else { 
 				None 
+			},
+			chat_identifier: if val.contains_key("chat_identifier") {
+				Some(val["chat_identifier"].as_str().unwrap().to_owned())
+			} else {
+				None
 			},
 		}
 	}
