@@ -30,7 +30,7 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				my_underline: Color::Rgb(101, 215, 253),
 				their_underline: Color::Rgb(134, 95, 96),
 				chat_indicator: Color::Rgb(30, 141, 199),
-				unread_indicator: Color::Rgb(0, 0, 0), // fix this bad boi
+				unread_indicator: Color::Rgb(245, 111, 66),
 				text_color: Color::White,
 				hints_box: Color::Rgb(195, 137, 138),
 			},

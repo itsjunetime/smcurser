@@ -42,6 +42,7 @@ pub struct Message {
 	pub date: i64,
 	pub balloon_bundle_id: String,
 	pub cache_has_attachments: bool,
+	pub attachments: Vec<Attachment>,
 	pub imsg: bool,
 	pub is_from_me: bool,
 	pub subject: String,
@@ -65,15 +66,24 @@ impl Message {
 			text: val["text"].as_str().unwrap().to_owned(),
 			associated_message_guid: val["associated_message_guid"].as_str().unwrap().to_owned(),
 			associated_message_type: val["associated_message_type"].as_i64().unwrap() as i16,
+			attachments: if val.contains_key("attachments") {
+				val["attachments"].as_array()
+					.unwrap()
+					.iter()
+					.map(|a| Attachment::from_json(a.as_object().unwrap()))
+					.collect()
+			} else {
+				Vec::new()
+			},
 			date_read: if val.contains_key("date_read") {
 				val["date_read"].as_i64().unwrap()
 			} else {
 				0
 			},
-			sender: if val.contains_key("sender") { 
-				Some(val["sender"].as_str().unwrap().to_owned()) 
-			} else { 
-				None 
+			sender: if val.contains_key("sender") {
+				Some(val["sender"].as_str().unwrap().to_owned())
+			} else {
+				None
 			},
 			chat_identifier: if val.contains_key("chat_identifier") {
 				Some(val["chat_identifier"].as_str().unwrap().to_owned())
@@ -100,5 +110,19 @@ impl fmt::Debug for Message {
 			.field("associated_message_type", &self.associated_message_type)
 			.field("sender", &self.sender)
 			.finish()
+	}
+}
+
+pub struct Attachment {
+	pub mime_type: String,
+	pub path: String,
+}
+
+impl Attachment {
+	pub fn from_json(val: &serde_json::Map<String, serde_json::Value>) -> Attachment {
+		Attachment {
+			mime_type: val["mime_type"].as_str().unwrap().to_owned(),
+			path: val["filename"].as_str().unwrap().to_owned(),
+		}
 	}
 }

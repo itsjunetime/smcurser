@@ -4,7 +4,7 @@ use tui::{
     layout::Rect,
     text::{Span, Spans},
     widgets::{Block, Borders, Paragraph, BorderType},
-	style::{Style, Color, Modifier},
+	style::{Style, Modifier},
 	terminal::Frame,
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,6 +13,7 @@ pub struct MessagesView {
 	pub scroll: u16,
 	pub messages: Vec<Message>,
 	pub messages_list: Vec<String>,
+	pub attachments: Vec<String>,
 	pub line_color_map: Vec<Style>,
 	pub last_width: u16,
 	pub last_height: u16,
@@ -25,6 +26,7 @@ impl MessagesView {
 			scroll: 0,
 			messages: Vec::new(),
 			messages_list: Vec::new(),
+			attachments: Vec::new(),
 			line_color_map: Vec::new(),
 			last_width: 0,
 			last_height: 0,
@@ -72,6 +74,7 @@ impl MessagesView {
 			let mut last_sender = "".to_string();
 
 			let mut lcm_temp = Vec::new();
+			let mut att_temp = Vec::new();
 
 			// This gets a vector of spans for all the messages. It handles stuff like
 			// inserting the time when necessary, adding the underlines, splitting the
@@ -94,6 +97,7 @@ impl MessagesView {
 							total_msg_height += 3;
 						}
 
+						// Set the sender's name above their text if it needs to be shown
 						if let Some(send) = &msg.sender {
 							if *send != last_sender || msg.date - last_timestamp >= 3600000000000 {
 								if msg.date - last_timestamp < 3600000000000 {
@@ -120,11 +124,11 @@ impl MessagesView {
 							.collect();
 
 						// find the length of the longest line (length calculated by utf-8 chars)
-						let max = text_lines.iter().fold(
-									0, |m, l| {
-										let len = l.graphemes(true).count();
-										if len > m { len } else { m }
-									});
+						let max = text_lines.iter()
+							.fold(0, |m, l| {
+								let len = l.graphemes(true).count();
+								if len > m { len } else { m }
+							});
 						let space = msg_width - max;
 
 						// add padding for my texts, put into spans
@@ -140,6 +144,13 @@ impl MessagesView {
 
 						vec.append(&mut lines);
 
+						// do attachments
+						for att in msg.attachments.iter() {
+							lcm_temp.push(Style::default().fg(set.colorscheme.text_color));
+							vec.push(format!("Attachment {}: {}", att_temp.len(), att.mime_type));
+							att_temp.push(att.path.as_str().to_string());
+						}
+
 						// add underline so it's pretty
 						let underline = format!("{}{}",
 							if msg.is_from_me { " ".repeat(space) } else { "".to_string() },
@@ -147,8 +158,12 @@ impl MessagesView {
 						);
 
 						lcm_temp.push(Style::default().fg(
-								if msg.is_from_me { set.colorscheme.my_underline } else { set.colorscheme.their_underline }
-							));
+							if msg.is_from_me {
+								set.colorscheme.my_underline
+							} else {
+								set.colorscheme.their_underline
+							}
+						));
 
 						vec.push(underline);
 						total_msg_height += 1;
@@ -157,6 +172,7 @@ impl MessagesView {
 					}
 				);
 
+			self.attachments = att_temp;
 			self.line_color_map = lcm_temp;
 			self.total_height = total_msg_height;
 
@@ -181,8 +197,8 @@ impl MessagesView {
 		self.last_width = 0;
 		self.scroll = 0;
 	}
-	
-	pub fn new_text(&mut self, msg: &Message) {
+
+	pub fn new_text(&mut self, msg: Message) {
 		let last = self.messages.last();
 
 		let last_timestamp = match last {
@@ -190,6 +206,7 @@ impl MessagesView {
 			Some(val) => val.date,
 		};
 
+		// show the time display
 		if let Ok(set) = SETTINGS.read() {
 			if msg.date - last_timestamp >= 3600000000000 {
 				let mut spans = vec![
@@ -205,6 +222,7 @@ impl MessagesView {
 			}
 		}
 
+		// Show the sender if it exists
 		if let Some(send) = &msg.sender {
 			if last.is_none() || send != last.unwrap().sender.as_ref().unwrap() || msg.date - last_timestamp >= 3600000000000 {
 				if msg.date - last_timestamp < 3600000000000 {
@@ -229,15 +247,23 @@ impl MessagesView {
 			.collect();
 
 		// find the length of the longest line (length calculated by utf-8 chars)
-		let max = text_lines.iter().fold(
-					0, |m, l| {
-						let len = l.graphemes(true).count();
-						if len > m { len } else { m }
-					});
+		let max = text_lines.iter()
+			.fold(0, |m, l| {
+				let len = l.graphemes(true).count();
+				if len > m { len } else { m }
+			});
 		let space = self.last_width as usize - 2 - max;
 
 		// add padding for my texts, put into spans
 		if let Ok(set) = SETTINGS.read() {
+
+			// do attachments
+			for att in msg.attachments.iter() {
+				self.line_color_map.push(Style::default().fg(set.colorscheme.text_color));
+				self.messages_list.push(format!("Attachment {}: {}", self.attachments.len(), att.mime_type));
+				self.attachments.push(att.path.as_str().to_string());
+			}
+
 			let mut lines: Vec<String> = text_lines.into_iter()
 				.map(|l| {
 					self.total_height += 1;
@@ -257,11 +283,30 @@ impl MessagesView {
 			);
 
 			self.line_color_map.push(Style::default().fg(
-					if msg.is_from_me { set.colorscheme.my_underline } else { set.colorscheme.their_underline }
-				));
+				if msg.is_from_me {
+					set.colorscheme.my_underline
+				} else {
+					set.colorscheme.their_underline
+				}
+			));
 
 			self.messages_list.push(underline);
 			self.total_height += 1;
+		}
+
+		self.messages.push(msg);
+	}
+
+	pub fn open_attachment(&self, idx: usize) {
+		if let Ok(set) = SETTINGS.read() {
+			open::that(
+				format!("http{}://{}:{}/data?path={}",
+					if set.secure { "s" } else { "" },
+					set.host,
+					set.server_port,
+					self.attachments[idx],
+				)
+			);
 		}
 	}
 }

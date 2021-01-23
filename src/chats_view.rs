@@ -137,4 +137,8 @@ impl ChatsView {
 			}
 		}
 	}
+
+	pub fn reload_chats(&mut self)  {
+		self.chats = APICLIENT.read().unwrap().get_chats(None, None);
+	}
 }

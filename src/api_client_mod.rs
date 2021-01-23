@@ -41,9 +41,9 @@ impl APIClient {
 			Ok(val) => val.to_string().parse().unwrap_or_else(|_| false),
 		};
 
-		if got_auth { 
+		if got_auth {
 			if let Ok(mut set) = SETTINGS.write() {
-				set.authenticated = true; 
+				set.authenticated = true;
 			}
 		}
 
@@ -122,7 +122,7 @@ impl APIClient {
 		if let Some(subj) = subject {
 			vals.add_text("subject", subj);
 		}
-		
+
 		if let Some(ph) = photos {
 			vals.add_text("photos", ph);
 		}

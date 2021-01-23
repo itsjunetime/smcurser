@@ -173,15 +173,15 @@ impl MainApp {
 		let mut distance = "".to_string();
 
 		loop {
-			if !poll(Duration::from_millis(20)).unwrap() {
+			if !poll(Duration::from_millis(10)).unwrap() {
 				let new_text = if let Ok(set) = SETTINGS.read() {
 					set.new_text.is_some()
 				} else {
 					false
 				};
 
-				if new_text { 
-					self.load_in_text(); 
+				if new_text {
+					self.load_in_text();
 					break;
 				}
 			} else {
@@ -209,8 +209,8 @@ impl MainApp {
 								}
 							},
 							// will add tab completion for file selection later
-							KeyCode::Tab => if self.input_str.len() > 0 { 
-								self.input_str.push_str("	"); 
+							KeyCode::Tab => if self.input_str.len() > 0 {
+								self.input_str.push_str("	");
 							},
 							// easy way to cancel what you're typing
 							KeyCode::Esc => {
@@ -258,7 +258,7 @@ impl MainApp {
 			match ch {
 				'h' | 'l' => self.switch_selected_box(),
 				// quit out of help display if it is showing
-				'q' | 'Q' => if let DisplayBox::Help = self.selected_box { 
+				'q' | 'Q' => if let DisplayBox::Help = self.selected_box {
 					self.selected_box = DisplayBox::Chats;
 				},
 				// scroll up or down in the selected box
@@ -285,13 +285,27 @@ impl MainApp {
 					self.hint_msg = "Please insert an index".to_string();
 				}
 			},
-			":h" | ":H" => { 
-				self.selected_box = DisplayBox::Help;
-			},
+			":h" | ":H" => self.selected_box = DisplayBox::Help,
 			":s" | ":S" => {
 				let cmd = splits.join("%20"); // rust why :(
 				self.send_text(Some(cmd), None);
-			}
+			},
+			":r" | ":R" => self.chats_view.reload_chats(),
+			":b" | ":B" => {
+				let ops = splits.iter().map(|o| o.to_string()).collect::<Vec<String>>();
+				self.bind_var(ops);
+			},
+			":a" | ":A" => {
+				if splits.len() > 0 {
+					let index = splits[0].parse::<usize>();
+					match index {
+						Ok(idx) => self.messages_view.open_attachment(idx),
+						Err(err) => self.hint_msg = format!("Cannot convert {} to an int", splits[0]),
+					}
+				} else {
+					self.hint_msg = "Please insert an index".to_string();
+				}
+			},
 			x => self.hint_msg = format!("Command {} not recognized", x),
 		};
 
@@ -353,7 +367,7 @@ impl MainApp {
 
 			if let Some(idx) = self.last_selected {
 				if *id == self.chats_view.chats[idx].chat_identifier {
-					self.messages_view.new_text(&text);
+					self.messages_view.new_text(text);
 				}
 			}
 		}
@@ -372,6 +386,21 @@ impl MainApp {
 				.send_text(text, None, id, Some(in_files), None);
 
 			self.hint_msg = (if sent { "text sent :)" } else { "text not sent :(" }).to_string();
+		}
+	}
+
+	fn bind_var(&mut self, ops: Vec<String>) {
+		if ops.len() < 2 {
+			self.hint_msg = "Please enter at least a variable name and value".to_string();
+			return;
+		}
+
+		let mut new_ops = ops;
+		let val = new_ops.split_off(1);
+		new_ops.push(val.join(" "));
+
+		if let Ok(mut set) = SETTINGS.write() {
+			set.parse_args(new_ops);
 		}
 	}
 }
