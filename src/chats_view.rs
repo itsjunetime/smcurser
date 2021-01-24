@@ -4,7 +4,7 @@ use tui::{
     layout::Rect,
     text::{Span, Spans},
     widgets::{Block, Borders, Paragraph, BorderType},
-	style::{Style, Color},
+	style::Style,
 	terminal::Frame,
 };
 
@@ -105,7 +105,7 @@ impl ChatsView {
 	}
 
 	pub fn scroll(&mut self, up: bool, distance: u16) {
-		if up {
+		if !up {
 			self.scroll = std::cmp::min(self.scroll + distance, self.chats.len() as u16);
 		} else {
 			self.scroll = std::cmp::max(self.scroll as i32 - distance as i32, 0) as u16;
@@ -125,17 +125,36 @@ impl ChatsView {
 		self.last_height = 0; // kinda dirty trick to force it to redraw the list next time
 	}
 
-	pub fn new_text(&mut self, item: &Message) {
+	pub fn new_text(&mut self, item: &Message) -> Option<usize> {
+		let mut ret: Option<usize> = None;
+
 		if let Some(id) = &item.chat_identifier {
 			let chat = self.chats.iter().position(|c| c.chat_identifier == *id);
 
 			if let Some(idx) = chat {
 				let mut old_chat = self.chats.remove(idx);
-				old_chat.has_unread = true;
+				if !item.is_from_me { old_chat.has_unread = true; }
+
+				if let Some(ls) = self.last_selected {
+					if idx == ls {
+						self.last_selected = Some(0);
+						old_chat.has_unread = false;
+					} else if idx > ls {
+						self.last_selected = Some(ls + 1);
+					}
+				}
 
 				self.chats.insert(0, old_chat);
+
+				ret = Some(idx);
+
+				self.last_height = 0;
 			}
 		}
+
+		// this doesn't account for the possibility of somebody sending you a text who hasn't
+		// texted you recently. I need to fix that up.
+		ret
 	}
 
 	pub fn reload_chats(&mut self)  {

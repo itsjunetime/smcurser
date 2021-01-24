@@ -4,7 +4,7 @@ use crate::chats_view::*;
 use crate::messages_view::*;
 use std::{
 	vec::Vec,
-	io::Stdout,
+	io::{Stdout, Write},
 	thread::spawn,
 };
 use core::time::Duration;
@@ -173,7 +173,7 @@ impl MainApp {
 		let mut distance = "".to_string();
 
 		loop {
-			if !poll(Duration::from_millis(10)).unwrap() {
+			if !poll(Duration::from_millis(20)).unwrap() {
 				let new_text = if let Ok(set) = SETTINGS.read() {
 					set.new_text.is_some()
 				} else {
@@ -262,7 +262,7 @@ impl MainApp {
 					self.selected_box = DisplayBox::Chats;
 				},
 				// scroll up or down in the selected box
-				'k' | 'j' => self.scroll(ch == 'j', distance),
+				'k' | 'j' => self.scroll(ch == 'k', distance),
 				// will add more later
 				_ => return,
 			}
@@ -300,7 +300,7 @@ impl MainApp {
 					let index = splits[0].parse::<usize>();
 					match index {
 						Ok(idx) => self.messages_view.open_attachment(idx),
-						Err(err) => self.hint_msg = format!("Cannot convert {} to an int", splits[0]),
+						Err(_) => self.hint_msg = format!("Cannot convert {} to an int", splits[0]),
 					}
 				} else {
 					self.hint_msg = "Please insert an index".to_string();
@@ -355,19 +355,18 @@ impl MainApp {
 				},
 			};
 
-			self.chats_view.new_text(&text);
+			// new_text returns the previous index of the conversation in which the new text was
+			// sent. We can use it to determine how to shift self.last_selected
+			let past = self.chats_view.new_text(&text);
 
-			let id = match &text.chat_identifier {
-				Some(c) => c,
-				None => {
-					self.hint_msg = "You got a new text but it has no chat_identifier... sorry".to_string();
-					return;
-				},
-			};
-
-			if let Some(idx) = self.last_selected {
-				if *id == self.chats_view.chats[idx].chat_identifier {
-					self.messages_view.new_text(text);
+			if let Some(idx) = past {
+				if let Some(ls) = self.last_selected {
+					if idx == ls {
+						self.last_selected = Some(0);
+						self.messages_view.new_text(text);
+					} else if idx > ls {
+						self.last_selected = Some(ls + 1);
+					}
 				}
 			}
 		}

@@ -149,6 +149,7 @@ impl MessagesView {
 							lcm_temp.push(Style::default().fg(set.colorscheme.text_color));
 							vec.push(format!("Attachment {}: {}", att_temp.len(), att.mime_type));
 							att_temp.push(att.path.as_str().to_string());
+							total_msg_height += 1;
 						}
 
 						// add underline so it's pretty
@@ -182,7 +183,7 @@ impl MessagesView {
 	pub fn scroll(&mut self, up: bool, distance: u16) {
 		// I don't understand how this logic works. But it does.
 
-		if up {
+		if !up {
 			// have to convert to signed to prevent overflow
 			self.scroll = std::cmp::max(self.scroll as i32 - distance as i32, 0) as u16;
 		} else {
@@ -262,6 +263,7 @@ impl MessagesView {
 				self.line_color_map.push(Style::default().fg(set.colorscheme.text_color));
 				self.messages_list.push(format!("Attachment {}: {}", self.attachments.len(), att.mime_type));
 				self.attachments.push(att.path.as_str().to_string());
+				self.total_height += 1;
 			}
 
 			let mut lines: Vec<String> = text_lines.into_iter()
