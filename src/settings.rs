@@ -27,7 +27,6 @@ pub struct Settings {
 	pub poll_exit: f64,
 	pub timeout: u16,
 	pub max_past_commands: u16,
-	pub new_text: Option<serde_json::Map<String, serde_json::Value>>,
 	pub debug: bool
 }
 
@@ -59,7 +58,6 @@ impl Settings {
 			poll_exit: 0.5,
 			timeout: 10,
 			max_past_commands: 10,
-			new_text: None,
 			debug: false,
 		}
 	}

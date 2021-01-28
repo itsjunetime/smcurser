@@ -8,6 +8,7 @@ use tui::{
 	terminal::Frame,
 };
 use unicode_segmentation::UnicodeSegmentation;
+use std::io::Write;
 
 pub struct MessagesView {
 	pub scroll: u16,
@@ -181,18 +182,33 @@ impl MessagesView {
 	}
 
 	pub fn scroll(&mut self, up: bool, distance: u16) {
-		// I don't understand how this logic works. But it does.
 
 		if !up {
 			// have to convert to signed to prevent overflow
 			self.scroll = std::cmp::max(self.scroll as i32 - distance as i32, 0) as u16;
 		} else {
-			self.scroll = std::cmp::min(self.scroll + distance, self.total_height as u16 - self.last_height);
+			let max = self.total_height as u16 - self.last_height;
+			self.scroll = std::cmp::min(self.scroll + distance, max);
+
+			if self.scroll == max {
+				if let Ok(state) = STATE.read() {
+					if let Some(chat) = &state.current_chat {
+						let mut new_msgs = APICLIENT.read()
+							.unwrap().get_texts(chat.as_str().to_string(), None, Some(self.messages.len() as i64), None, None);
+
+						new_msgs.reverse();
+						new_msgs.append(&mut self.messages);
+						self.messages = new_msgs;
+
+						self.last_height = 0;
+					}
+				}
+			}
 		}
 	}
 
-	pub fn load_in_conversation(&mut self, id: String) {
-		self.messages = APICLIENT.read().unwrap().get_texts(id, None, None, None, None);
+	pub fn load_in_conversation(&mut self, id: &String) {
+		self.messages = APICLIENT.read().unwrap().get_texts(id.as_str().to_string(), None, None, None, None);
 		self.messages.reverse(); // cause ya gotta
 
 		self.last_width = 0;

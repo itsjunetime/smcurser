@@ -91,22 +91,33 @@ impl ChatsView {
 					c.display_name.as_str().to_string()
 				};
 
-				let l = i + self.scroll as usize;
-
 				let idx = format!("{}{}{}",
-					if l < 100 { " " } else { "" },
-					if l < 10 { " " } else { "" },
-					l
+					if i < 100 { " " } else { "" },
+					if i < 10 { " " } else { "" },
+					i
 				); // I'm just gonna hope that nobody is going 1000 chats deep lol
 
 				format!("{} {} {}", idx, symbol, name)
 			})
 			.collect();
+
+		if let Ok(mut state) = STATE.write() {
+			state.hint_msg = format!("cl len: {}", self.chats_list.len());
+		}
 	}
 
 	pub fn scroll(&mut self, up: bool, distance: u16) {
 		if !up {
-			self.scroll = std::cmp::min(self.scroll + distance, self.chats.len() as u16);
+			let max = self.chats_list.len() as u16 - (self.last_height / 2) + 2;
+			self.scroll = std::cmp::min(self.scroll + distance, max);
+
+			if self.scroll == max {
+				let mut new_chats = APICLIENT.read()
+					.unwrap().get_chats(None, Some(self.chats.len() as i64));
+
+				self.chats.append(&mut new_chats);
+				self.last_height = 0;
+			}
 		} else {
 			self.scroll = std::cmp::max(self.scroll as i32 - distance as i32, 0) as u16;
 		}

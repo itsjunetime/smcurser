@@ -5,18 +5,21 @@ mod models;
 mod main_app;
 mod chats_view;
 mod messages_view;
+mod state;
 
 use std::sync::{Arc, RwLock};
 use lazy_static::*;
 use settings::*;
 use api_client_mod::*;
 use main_app::*;
+use state::GlobalState;
 use tui::{Terminal, backend::CrosstermBackend};
 use std::io;
 
 lazy_static! {
 	static ref SETTINGS: Arc<RwLock<Settings>> = Arc::new(RwLock::new(Settings::default()));
 	static ref APICLIENT: Arc<RwLock<APIClient>> = Arc::new(RwLock::new(APIClient::new()));
+	static ref STATE: Arc<RwLock<GlobalState>> = Arc::new(RwLock::new(GlobalState::new()));
 }
 
 fn main() -> Result<(), io::Error> {

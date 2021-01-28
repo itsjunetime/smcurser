@@ -18,7 +18,6 @@ use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 
 pub struct MainApp {
 	input_str: String,
-	hint_msg: String,
 	right_offset: i32, // cursor offset from the right side of the input string
 	input_left_start: i32, // what index of the input string appears at the start of the input box
 	last_selected: Option<usize>,
@@ -33,7 +32,6 @@ impl MainApp {
 	pub fn new() -> MainApp {
 		MainApp {
 			input_str: String::from(""),
-			hint_msg: String::from("type :h to get help :)"),
 			right_offset: 0,
 			input_left_start: 0,
 			last_selected: None,
@@ -68,8 +66,8 @@ impl MainApp {
 								let json: serde_json::Value = serde_json::from_str(&content).unwrap();
 								let text_json: serde_json::Map<String, serde_json::Value> = json["text"].as_object().unwrap().to_owned();
 
-								if let Ok(mut set) = SETTINGS.write() {
-									set.new_text = Some(text_json);
+								if let Ok(mut state) = STATE.write() {
+									state.new_text = Some(text_json);
 								}
 							},
 							&_ => (),
@@ -155,7 +153,12 @@ impl MainApp {
 						f.set_cursor(self.input_str.len() as u16 + 1 - self.right_offset as u16, size.height - 3);
 
 						// create a span for the help box add the help string
-						let help_span = vec![Spans::from(vec![Span::styled(self.hint_msg.as_str(), Style::default().fg(set.colorscheme.hints_box))])];
+						let hint_msg = if let Ok(state) = STATE.read() {
+							state.hint_msg.as_str().to_string()
+						} else {
+							"type :h to get help :)".to_string()
+						};
+						let help_span = vec![Spans::from(vec![Span::styled(hint_msg, Style::default().fg(set.colorscheme.hints_box))])];
 						let help_widget = Paragraph::new(help_span);
 						f.render_widget(help_widget, main_layout[2]);
 					}
@@ -174,8 +177,8 @@ impl MainApp {
 
 		loop {
 			if !poll(Duration::from_millis(20)).unwrap() {
-				let new_text = if let Ok(set) = SETTINGS.read() {
-					set.new_text.is_some()
+				let new_text = if let Ok(state) = STATE.read() {
+					state.new_text.is_some()
 				} else {
 					false
 				};
@@ -215,7 +218,9 @@ impl MainApp {
 							// easy way to cancel what you're typing
 							KeyCode::Esc => {
 								self.input_str = "".to_string();
-								self.hint_msg = "Command cancelled".to_string();
+								if let Ok(mut state) = STATE.write() {
+									state.hint_msg = "Command cancelled".to_string();
+								}
 							},
 							// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
 							// for people to invoke it to exit if that's what they're used to.
@@ -279,10 +284,14 @@ impl MainApp {
 					let index = splits[0].parse::<usize>();
 					match index {
 						Ok(idx) => self.load_in_conversation(idx),
-						Err(_) => self.hint_msg = format!("Cannot convert {} to an int", splits[0]),
+						Err(_) => {
+							if let Ok(mut state) = STATE.write() {
+								state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
+							}
+						}
 					}
-				} else {
-					self.hint_msg = "Please insert an index".to_string();
+				} else if let Ok(mut state) = STATE.write() {
+					state.hint_msg = "Please insert an index".to_string();
 				}
 			},
 			":h" | ":H" => self.selected_box = DisplayBox::Help,
@@ -300,13 +309,21 @@ impl MainApp {
 					let index = splits[0].parse::<usize>();
 					match index {
 						Ok(idx) => self.messages_view.open_attachment(idx),
-						Err(_) => self.hint_msg = format!("Cannot convert {} to an int", splits[0]),
+						Err(_) => {
+							if let Ok(mut state) = STATE.write() {
+								state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
+							}
+						}
 					}
-				} else {
-					self.hint_msg = "Please insert an index".to_string();
+				} else if let Ok(mut state) = STATE.write() {
+					state.hint_msg = "Please insert an index".to_string();
 				}
 			},
-			x => self.hint_msg = format!("Command {} not recognized", x),
+			x => {
+				if let Ok(mut state) = STATE.write() {
+					state.hint_msg = format!("Command {} not recognized", x);
+				}
+			}
 		};
 
 		self.input_str = "".to_string();
@@ -326,7 +343,9 @@ impl MainApp {
 			DisplayBox::Chats => self.chats_view.scroll(up, distance),
 			DisplayBox::Messages => self.messages_view.scroll(up, distance),
 			_ => {
-				self.hint_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
+				if let Ok(mut state) = STATE.write() {
+					state.hint_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
+				}
 			},
 		}
 	}
@@ -337,24 +356,30 @@ impl MainApp {
 			self.chats_view.load_in_conversation(idx);
 			let id = self.chats_view.chats[idx].chat_identifier.as_str().to_string();
 
-			self.messages_view.load_in_conversation(id);
+			self.messages_view.load_in_conversation(&id);
 
 			self.last_selected = Some(idx);
-		} else {
-			self.hint_msg = format!("{} is out of range for the chats", idx);
+
+			if let Ok(mut state) = STATE.write() {
+				state.current_chat = Some(id);
+			}
+		} else if let Ok(mut state) = STATE.write() {
+			state.hint_msg = format!("{} is out of range for the chats", idx);
 		}
 	}
 
 	fn load_in_text(&mut self) {
-		if let Ok(set) = SETTINGS.read() {
-			let text = match &set.new_text {
-				Some(t) => Message::from_json(&t),
-				None => {
-					self.hint_msg = "You got a new text but we can't parse it, sorry...".to_string();
-					return;
-				},
-			};
+		let text_opt = if let Ok(state) = STATE.read() {
+			if let Some(text_map) = &state.new_text {
+				Some(Message::from_json(&text_map))
+			} else {
+				None
+			}
+		} else {
+			None
+		};
 
+		if let Some(text) = text_opt {
 			// new_text returns the previous index of the conversation in which the new text was
 			// sent. We can use it to determine how to shift self.last_selected
 			let past = self.chats_view.new_text(&text);
@@ -371,8 +396,8 @@ impl MainApp {
 			}
 		}
 
-		if let Ok(mut set) = SETTINGS.write() {
-			set.new_text = None;
+		if let Ok(mut state) = STATE.write() {
+			state.new_text = None;
 		}
 	}
 
@@ -384,13 +409,21 @@ impl MainApp {
 			let sent = APICLIENT.read().unwrap()
 				.send_text(text, None, id, Some(in_files), None);
 
-			self.hint_msg = (if sent { "text sent :)" } else { "text not sent :(" }).to_string();
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = (if sent { 
+					"text sent :)" 
+				} else { 
+					"text not sent :(" 
+				}).to_string();
+			}
 		}
 	}
 
 	fn bind_var(&mut self, ops: Vec<String>) {
 		if ops.len() < 2 {
-			self.hint_msg = "Please enter at least a variable name and value".to_string();
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "Please enter at least a variable name and value".to_string();
+			}
 			return;
 		}
 
