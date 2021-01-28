@@ -41,7 +41,7 @@ fn main() -> Result<(), io::Error> {
 
 fn parse_args(args: Vec<String>) {
 	let mut set = SETTINGS.write().expect("Couldn't open settings to write. Please try again or contact the developer.");
-	set.parse_args(args);
+	set.parse_args(args, false);
 }
 
 const HELP_MSG: [&str; 28] = ["COMMANDS:",

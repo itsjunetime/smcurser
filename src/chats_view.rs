@@ -100,10 +100,6 @@ impl ChatsView {
 				format!("{} {} {}", idx, symbol, name)
 			})
 			.collect();
-
-		if let Ok(mut state) = STATE.write() {
-			state.hint_msg = format!("cl len: {}", self.chats_list.len());
-		}
 	}
 
 	pub fn scroll(&mut self, up: bool, distance: u16) {

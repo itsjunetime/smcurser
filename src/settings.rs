@@ -1,3 +1,4 @@
+use crate::*;
 use crate::colorscheme::*;
 use chrono::prelude::*;
 
@@ -160,60 +161,148 @@ impl Settings {
 		self.push_to_req_url(format!("data?path={}", path))
 	}
 
-	pub fn parse_args(&mut self, args: Vec<String>) {
-				let mut it = args.iter();
+	pub fn parse_args(&mut self, args: Vec<String>, tui_mode: bool) {
+		let mut it = args.iter();
 
 		while let Some(arg) = it.next() {
 			match arg.replace("--", "").as_str() {
-				"host" => self.host = self.get_string_from_it(&mut it, "host"),
-				"fallback_host" => self.fallback_host = self.get_string_from_it(&mut it, arg),
-				"server_port" => self.server_port = self.get_u16_from_it(&mut it, arg),
-				"socket_port" => self.socket_port = self.get_u16_from_it(&mut it, arg),
+				"host" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.host = s;
+					},
+				"fallback_host" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.fallback_host = s;
+					}
+				"server_port" =>
+					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
+						self.server_port = u;
+					}
+				"socket_port" =>
+					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
+						self.socket_port = u;
+					}
 				"secure" => self.secure = self.get_bool_from_it(&mut it),
 				"notifications" => self.notifications = self.get_bool_from_it(&mut it),
-				"password" => self.password = self.get_string_from_it(&mut it, "password"),
-				"current_chat_indicator" => self.current_chat_indicator = self.get_string_from_it(&mut it, "current_chat_indicator"),
-				"my_chat_end" => self.my_chat_end = self.get_string_from_it(&mut it, "my_chat_end"),
-				"their_chat_end" => self.their_chat_end = self.get_string_from_it(&mut it, "their_chat_end"),
-				"chat_underline" => self.chat_underline = self.get_string_from_it(&mut it, "chat_underline"),
-				"chats_title" => self.chats_title = self.get_string_from_it(&mut it, "chats_title"),
-				"messages_title" => self.messages_title = self.get_string_from_it(&mut it, "messages_title"),
-				"input_title" => self.input_title = self.get_string_from_it(&mut it, "input_title"),
-				"help_title" => self.help_title = self.get_string_from_it(&mut it, "help_title"),
-				"to_title" => self.to_title = self.get_string_from_it(&mut it, "to_title"),
-				"compose_title" => self.compose_title = self.get_string_from_it(&mut it, "compose_title"),
-				"colorscheme" => self.colorscheme = Colorscheme::from(self.get_string_from_it(&mut it, "colorscheme")),
-				"chat_vertical_offset" => self.chat_vertical_offset = self.get_u16_from_it(&mut it, "chat_vertical_offset"),
-				"title_offset" => self.title_offset = self.get_u16_from_it(&mut it, "title_offset"),
-				"help_inset" => self.help_inset = self.get_u16_from_it(&mut it, "help_inset"),
+				"password" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.password = s;
+					},
+				"current_chat_indicator" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.current_chat_indicator = s;
+					},
+				"my_chat_end" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.my_chat_end = s;
+					},
+				"their_chat_end" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.their_chat_end = s;
+					},
+				"chat_underline" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.chat_underline = s;
+					},
+				"chats_title" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.chats_title = s;
+					},
+				"messages_title" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.messages_title = s;
+					},
+				"input_title" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.input_title = s;
+					},
+				"help_title" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.help_title = s;
+					},
+				"to_title" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.to_title = s;
+					},
+				"compose_title" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.compose_title = s;
+					},
+				"colorscheme" =>
+					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+						self.colorscheme = Colorscheme::from(s);
+					},
 				"poll_exit" => {
-					self.poll_exit = it.next().expect(format!("Please enter a value for the key {}", arg).as_str())
-						.parse().expect(format!("Please enter a float value for the key {}", arg).as_str());
+					if let Some(pe) = it.next() {
+						if let Ok(value) = pe.parse() {
+							self.poll_exit = value;
+						} else {
+							let pstr = format!("Please enter a float value for the key {}", arg);
+							Settings::print_msg(pstr, tui_mode);
+						}
+					} else {
+						let pstr = format!("Please enter a value for the key {}", arg);
+						Settings::print_msg(pstr, tui_mode);
+					}
 				},
-				"timeout" => self.timeout = self.get_u16_from_it(&mut it, "timeout"),
-				"max_past_commands" => self.max_past_commands = self.get_u16_from_it(&mut it, "max_past_commands"),
+				"timeout" =>
+					if let Some(u) = self.get_u16_from_it(&mut it, "timeout", tui_mode) {
+						self.timeout = u
+					},
+				"max_past_commands" =>
+					if let Some(u) = self.get_u16_from_it(&mut it, "max_past_commands", tui_mode) {
+						self.max_past_commands = u
+					},
 				"debug" => self.debug = self.get_bool_from_it(&mut it),
-				x => println!("Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x),
+				x => Settings::print_msg(
+					format!("Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x), 
+					tui_mode
+				),
 			}
 		}
 
 	}
 
-	fn get_u16_from_it(&self, it: &mut std::slice::Iter<String>, key: &str) -> u16 {
-		it.next().expect(format!("Please enter a value for the key {}", key).as_str())
-			.parse().expect(format!("Please enter an integer value for the key {}", key).as_str())
+	fn get_u16_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<u16> {
+		if let Some(to_parse) = it.next() {
+			if let Ok(value) = to_parse.parse() {
+				Some(value)
+			} else {
+				let pstr = format!("Please enter an integer value for the key {}", key);
+				Settings::print_msg(pstr, tui_mode);
+				None
+			}
+		} else {
+			let pstr = format!("Please enter a value for the key {}", key);
+			Settings::print_msg(pstr, tui_mode);
+			None
+		}
 	}
 
-	fn get_string_from_it(&self, it: &mut std::slice::Iter<String>, key: &str) -> String {
-		it.next()
-			.expect(format!("Please enter a value for the key {}", key).as_str())
-			.to_owned()
+	fn get_string_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<String> {
+		if let Some(value) = it.next() {
+			Some(value.to_owned())
+		} else {
+			let pstr = format!("Please enter a value for the key {}", key);
+			Settings::print_msg(pstr, tui_mode);
+			None
+		}
 	}
 
 	fn get_bool_from_it(&self, it: &mut std::slice::Iter<String>) -> bool {
 		match it.next() {
 			None => true,
-			Some(val) => val.parse().unwrap_or_else(|_| true)
+			Some(val) => val.parse().unwrap_or(true)
+		}
+	}
+
+	fn print_msg(msg: String, tui_mode: bool) {
+		if tui_mode {
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = msg;
+			}
+		} else {
+			println!("{}", msg)
 		}
 	}
 

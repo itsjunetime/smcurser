@@ -4,7 +4,7 @@ use crate::chats_view::*;
 use crate::messages_view::*;
 use std::{
 	vec::Vec,
-	io::{Stdout, Write},
+	io::Stdout,
 	thread::spawn,
 };
 use core::time::Duration;
@@ -362,6 +362,7 @@ impl MainApp {
 
 			if let Ok(mut state) = STATE.write() {
 				state.current_chat = Some(id);
+				state.hint_msg = "loaded in chat :)".to_string();
 			}
 		} else if let Ok(mut state) = STATE.write() {
 			state.hint_msg = format!("{} is out of range for the chats", idx);
@@ -372,12 +373,8 @@ impl MainApp {
 		let text_opt = if let Ok(state) = STATE.read() {
 			if let Some(text_map) = &state.new_text {
 				Some(Message::from_json(&text_map))
-			} else {
-				None
-			}
-		} else {
-			None
-		};
+			} else { None }
+		} else { None };
 
 		if let Some(text) = text_opt {
 			// new_text returns the previous index of the conversation in which the new text was
@@ -410,10 +407,10 @@ impl MainApp {
 				.send_text(text, None, id, Some(in_files), None);
 
 			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = (if sent { 
-					"text sent :)" 
-				} else { 
-					"text not sent :(" 
+				state.hint_msg = (if sent {
+					"text sent :)"
+				} else {
+					"text not sent :("
 				}).to_string();
 			}
 		}
@@ -432,7 +429,7 @@ impl MainApp {
 		new_ops.push(val.join(" "));
 
 		if let Ok(mut set) = SETTINGS.write() {
-			set.parse_args(new_ops);
+			set.parse_args(new_ops, true);
 		}
 	}
 }

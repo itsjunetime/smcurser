@@ -8,7 +8,6 @@ use tui::{
 	terminal::Frame,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::io::Write;
 
 pub struct MessagesView {
 	pub scroll: u16,
@@ -125,7 +124,7 @@ impl MessagesView {
 							.collect();
 
 						// find the length of the longest line (length calculated by utf-8 chars)
-						let max = text_lines.iter()
+						let mut max = text_lines.iter()
 							.fold(0, |m, l| {
 								let len = l.graphemes(true).count();
 								if len > m { len } else { m }
@@ -148,7 +147,17 @@ impl MessagesView {
 						// do attachments
 						for att in msg.attachments.iter() {
 							lcm_temp.push(Style::default().fg(set.colorscheme.text_color));
-							vec.push(format!("Attachment {}: {}", att_temp.len(), att.mime_type));
+							let att_line = format!("{}Attachment {}: {}",
+											if msg.is_from_me { " ".repeat(space) }
+											else { "".to_string() },
+											att_temp.len(),
+											att.mime_type);
+
+							if att_line.len() > max {
+								max = att_line.len();
+							}
+
+							vec.push(att_line);
 							att_temp.push(att.path.as_str().to_string());
 							total_msg_height += 1;
 						}
@@ -191,16 +200,23 @@ impl MessagesView {
 			self.scroll = std::cmp::min(self.scroll + distance, max);
 
 			if self.scroll == max {
-				if let Ok(state) = STATE.read() {
+				let new_msgs_opt = if let Ok(state) = STATE.read() {
 					if let Some(chat) = &state.current_chat {
-						let mut new_msgs = APICLIENT.read()
-							.unwrap().get_texts(chat.as_str().to_string(), None, Some(self.messages.len() as i64), None, None);
+						Some(APICLIENT.read()
+							.unwrap()
+							.get_texts(chat.as_str().to_string(), None, Some(self.messages.len() as i64), None, None))
+					} else { None }
+				} else { None };
 
-						new_msgs.reverse();
-						new_msgs.append(&mut self.messages);
-						self.messages = new_msgs;
+				if let Some(mut new_msgs) = new_msgs_opt {
+					new_msgs.reverse();
+					new_msgs.append(&mut self.messages);
+					self.messages = new_msgs;
 
-						self.last_height = 0;
+					self.last_height = 0;
+
+					if let Ok(mut state) = STATE.write() {
+						state.hint_msg = "loaded in more messages".to_string();
 					}
 				}
 			}
@@ -264,7 +280,7 @@ impl MessagesView {
 			.collect();
 
 		// find the length of the longest line (length calculated by utf-8 chars)
-		let max = text_lines.iter()
+		let mut max = text_lines.iter()
 			.fold(0, |m, l| {
 				let len = l.graphemes(true).count();
 				if len > m { len } else { m }
@@ -277,7 +293,17 @@ impl MessagesView {
 			// do attachments
 			for att in msg.attachments.iter() {
 				self.line_color_map.push(Style::default().fg(set.colorscheme.text_color));
-				self.messages_list.push(format!("Attachment {}: {}", self.attachments.len(), att.mime_type));
+				let att_line = format!("{}Attachment {}: {}",
+									if msg.is_from_me { " ".repeat(space) }
+									else { "".to_string() },
+									self.attachments.len(),
+									att.mime_type);
+
+				if att_line.len() > max {
+					max = att_line.len();
+				}
+
+				self.messages_list.push(att_line);
 				self.attachments.push(att.path.as_str().to_string());
 				self.total_height += 1;
 			}
@@ -318,11 +344,8 @@ impl MessagesView {
 	pub fn open_attachment(&self, idx: usize) {
 		if let Ok(set) = SETTINGS.read() {
 			open::that(
-				format!("http{}://{}:{}/data?path={}",
-					if set.secure { "s" } else { "" },
-					set.host,
-					set.server_port,
-					self.attachments[idx],
+				set.attachment_string(
+					self.attachments[idx].as_str().to_string()
 				)
 			);
 		}

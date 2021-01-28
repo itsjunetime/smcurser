@@ -15,15 +15,6 @@ pub struct Colorscheme {
 impl<T: Into<String>> From<T> for Colorscheme {
 	fn from(val: T) -> Self {
 		match val.into().as_str() {
-			//"default" => [6, -1, 39, 248, 219, 39, 231, 9],
-			//"outrun" => [211, 6, 165, 238, 228, 205, 231, 209],
-			//"coral" => [202, 208, 251, 117, 207, 73, 7, 79],
-			//"forest" => [48, 36, 95, 81, 39, 207, 253, 217],
-			//"soft" => [152, 151, 247, 67, 44, 216, 188, 230],
-			/*x => {
-				println!("Colorscheme {} not found. Using default", x);
-				[6, -1, 39, 248, 219, 39, 231, 9]
-			},*/
 			"forest" => Colorscheme {
 				selected_box: Color::Rgb(36, 139, 84),
 				unselected_box: Color::Rgb(28, 102, 83),
@@ -44,10 +35,7 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				text_color: Color::Rgb(224, 222, 244),
 				hints_box: Color::Rgb(112, 110, 134),
 			},
-			x => {
-				println!("Colorscheme {} not found, Using default", x);
-				Colorscheme::from("forest")
-			},
+			_ => Colorscheme::from("forest"),
 		}
 	}
 }
