@@ -22,20 +22,17 @@ pub struct Settings {
 	pub to_title: String,
 	pub compose_title: String,
 	pub colorscheme: Colorscheme,
-	pub chat_vertical_offset: u16,
-	pub title_offset: u16,
-	pub help_inset: u16,
-	pub poll_exit: f64,
+	pub poll_exit: u16,
 	pub timeout: u16,
 	pub max_past_commands: u16,
-	pub debug: bool
+	pub show_help: bool,
 }
 
 impl Settings {
 	pub fn default() -> Settings {
 		Settings {
-			host: "192.168.0.180".to_owned(),
-			fallback_host: "192.168.0.127".to_owned(),
+			host: "".to_owned(),
+			fallback_host: "".to_owned(),
 			server_port: 8741,
 			socket_port: 8740,
 			secure: true,
@@ -53,13 +50,10 @@ impl Settings {
 			to_title: "| to: |".to_owned(),
 			compose_title: "| message: |".to_owned(),
 			colorscheme: Colorscheme::from(String::from("forest")),
-			chat_vertical_offset: 1,
-			title_offset: 5,
-			help_inset: 5,
-			poll_exit: 0.5,
+			poll_exit: 10,
 			timeout: 10,
 			max_past_commands: 10,
-			debug: false,
+			show_help: false,
 		}
 	}
 
@@ -188,7 +182,7 @@ impl Settings {
 					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
 						self.password = s;
 					},
-				"current_chat_indicator" =>
+				"chat_indicator" =>
 					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
 						self.current_chat_indicator = s;
 					},
@@ -232,28 +226,19 @@ impl Settings {
 					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
 						self.colorscheme = Colorscheme::from(s);
 					},
-				"poll_exit" => {
-					if let Some(pe) = it.next() {
-						if let Ok(value) = pe.parse() {
-							self.poll_exit = value;
-						} else {
-							let pstr = format!("Please enter a float value for the key {}", arg);
-							Settings::print_msg(pstr, tui_mode);
-						}
-					} else {
-						let pstr = format!("Please enter a value for the key {}", arg);
-						Settings::print_msg(pstr, tui_mode);
-					}
-				},
+				"poll_exit" =>
+					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
+						self.poll_exit = u;
+					},
 				"timeout" =>
-					if let Some(u) = self.get_u16_from_it(&mut it, "timeout", tui_mode) {
+					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
 						self.timeout = u
 					},
-				"max_past_commands" =>
-					if let Some(u) = self.get_u16_from_it(&mut it, "max_past_commands", tui_mode) {
+				"max_commands" =>
+					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
 						self.max_past_commands = u
 					},
-				"debug" => self.debug = self.get_bool_from_it(&mut it),
+				"help" => self.show_help = self.get_bool_from_it(&mut it) && !tui_mode,
 				x => Settings::print_msg(
 					format!("Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x), 
 					tui_mode

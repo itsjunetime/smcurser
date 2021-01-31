@@ -50,32 +50,42 @@ impl MainApp {
 		drop(set);
 
 		spawn(move || {
-			let (mut socket, _) =
-				tungstenite::connect(url::Url::parse(server.as_str()).unwrap()).expect("Can't connect to websocket :(");
+			let sock_res = tungstenite::connect(url::Url::parse(server.as_str()).unwrap());
 
-			loop {
-				let msg = socket.read_message().expect("Error reading websocket message");
-				match msg {
-					tungstenite::Message::Text(val) => {
-						let mut splits = val.splitn(2, ':');
-						let prefix = splits.next().unwrap();
-						let content = splits.next().unwrap();
+			match sock_res {
+				Ok((mut socket, _)) => {
+					loop {
+						let msg = socket.read_message().expect("Error reading websocket message");
+						match msg {
+							tungstenite::Message::Text(val) => {
+								let mut splits = val.splitn(2, ':');
+								let prefix = splits.next().unwrap();
+								let content = splits.next().unwrap();
 
-						match prefix {
-							"text" => {
-								let json: serde_json::Value = serde_json::from_str(&content).unwrap();
-								let text_json: serde_json::Map<String, serde_json::Value> = json["text"].as_object().unwrap().to_owned();
+								match prefix {
+									"text" => {
+										let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+										let text_json: serde_json::Map<String, serde_json::Value> =
+											json["text"].as_object().unwrap().to_owned();
 
-								if let Ok(mut state) = STATE.write() {
-									state.new_text = Some(text_json);
+										if let Ok(mut state) = STATE.write() {
+											state.new_text = Some(text_json);
+										}
+									},
+									&_ => (),
 								}
 							},
-							&_ => (),
+							_ => (),
 						}
-					},
-					_ => (),
+					}
+				},
+				Err(_) => {
+					if let Ok(mut state) = STATE.write() {
+						state.hint_msg = "Error: Failed to connect to websocket. New messages will not show.".to_string();
+					}
 				}
-			}
+			};
+
 		});
 
 		let _ = crossterm::terminal::enable_raw_mode();
