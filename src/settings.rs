@@ -240,7 +240,7 @@ impl Settings {
 					},
 				"help" => self.show_help = self.get_bool_from_it(&mut it) && !tui_mode,
 				x => Settings::print_msg(
-					format!("Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x), 
+					format!("Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x),
 					tui_mode
 				),
 			}

@@ -10,27 +10,25 @@ use tui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 pub struct MessagesView {
-	pub scroll: u16,
+	pub selected_msg: u16,
 	pub messages: Vec<Message>,
-	pub messages_list: Vec<String>,
+	pub line_list: Vec<MessageLine>,
 	pub attachments: Vec<String>,
-	pub line_color_map: Vec<Style>,
 	pub last_width: u16,
 	pub last_height: u16,
-	pub total_height: u32,
+	pub y_bounds: (u16, u16) // .0 is top, .1 is bottom
 }
 
 impl MessagesView {
 	pub fn new() -> MessagesView {
 		MessagesView {
-			scroll: 0,
+			selected_msg: 0,
 			messages: Vec::new(),
-			messages_list: Vec::new(),
+			line_list: Vec::new(),
 			attachments: Vec::new(),
-			line_color_map: Vec::new(),
 			last_width: 0,
 			last_height: 0,
-			total_height: 0,
+			y_bounds: (0, 0),
 		}
 	}
 
@@ -43,9 +41,28 @@ impl MessagesView {
 				self.last_height = rect.height;
 			}
 
-			let item_list: Vec<Spans> = self.messages_list.iter()
+			let item_list: Vec<Spans> = self.line_list.iter()
 				.enumerate()
-				.map(|(i, m)| Spans::from(vec![Span::styled(m.as_str(), self.line_color_map[i])]))
+				.map(|(i, l)| {
+					let style = match l.message_type {
+						MessageLineType::Blank | MessageLineType::TimeDisplay | MessageLineType::Text =>
+							Style::default().fg(set.colorscheme.text_color),
+						MessageLineType::Sender =>
+							Style::default().fg(set.colorscheme.text_color).add_modifier(Modifier::ITALIC | Modifier::BOLD),
+						MessageLineType::Underline =>
+							Style::default().fg(
+								if l.relative_index as u16 == self.selected_msg {
+									set.colorscheme.selected_underline
+								} else if l.from_me {
+									set.colorscheme.my_underline
+								} else {
+									set.colorscheme.their_underline
+								}
+							),
+					};
+
+					Spans::from(vec![Span::styled(l.text.as_str(), style)])
+				})
 				.collect();
 
 			// this will serve as the border for the messages widget
@@ -57,8 +74,8 @@ impl MessagesView {
 
 			// create the widget and scroll it to the correct location
 			let mut messages_widget = Paragraph::new(item_list).block(messages_border);
-			if self.messages.len() > 0 && self.total_height as u16 >= rect.height {
-				messages_widget = messages_widget.scroll((self.total_height as u16 - rect.height + 2 - self.scroll, 0));
+			if self.messages.len() > 0 && self.line_list.len() as u16 >= rect.height {
+				messages_widget = messages_widget.scroll((self.y_bounds.0, 0));
 			}
 			frame.render_widget(messages_widget, rect);
 		}
@@ -70,46 +87,35 @@ impl MessagesView {
 			let opts = textwrap::Options::new((msg_width as f64 * 0.6) as usize);
 
 			let mut last_timestamp = 0;
-			let mut total_msg_height = 0;
 			let mut last_sender = "".to_string();
-
-			let mut lcm_temp = Vec::new();
 			let mut att_temp = Vec::new();
 
 			// This gets a vector of spans for all the messages. It handles stuff like
 			// inserting the time when necessary, adding the underlines, splitting the
 			// texts into lines of correct length, etc.
-			self.messages_list = self.messages.iter()
+			self.line_list = self.messages.iter()
 				.enumerate()
 				.fold(
-					Vec::new(), |mut vec, (_, msg)| {
+					Vec::new(), |mut vec, (i, msg)| {
 						// check, add time display if necessary
 						if msg.date - last_timestamp >= 3600000000000 {
+							let date_pad = Settings::date_pad_string(msg.date, msg_width);
 							let mut spans = vec![
-								"".to_string(),
-								Settings::date_pad_string(msg.date, msg_width),
-								"".to_string(),
+								MessageLine::blank(i),
+								MessageLine::new(date_pad.to_string(), MessageLineType::TimeDisplay, i, msg.is_from_me),
+								MessageLine::blank(i),
 							];
 							vec.append(&mut spans);
-
-							lcm_temp.append(&mut vec![Style::default().fg(set.colorscheme.text_color); 3]);
-
-							total_msg_height += 3;
 						}
 
 						// Set the sender's name above their text if it needs to be shown
 						if let Some(send) = &msg.sender {
 							if *send != last_sender || msg.date - last_timestamp >= 3600000000000 {
 								if msg.date - last_timestamp < 3600000000000 {
-									vec.push("".to_string());
-									lcm_temp.push(Style::default());
-									total_msg_height += 1;
+									vec.push(MessageLine::blank(i));
 								}
 
-								vec.push(send.to_string());
-								lcm_temp.push(Style::default().add_modifier(Modifier::ITALIC | Modifier::BOLD));
-
-								total_msg_height += 1;
+								vec.push(MessageLine::new(send.to_string(), MessageLineType::Sender, i, msg.is_from_me));
 							}
 
 							last_sender = send.as_str().to_string();
@@ -132,13 +138,13 @@ impl MessagesView {
 						let space = msg_width - max;
 
 						// add padding for my texts, put into spans
-						let mut lines: Vec<String> = text_lines.into_iter()
+						let mut lines: Vec<MessageLine> = text_lines.into_iter()
 							.map(|l| {
-								total_msg_height += 1;
-								lcm_temp.push(Style::default().fg(set.colorscheme.text_color));
+								let text = if msg.is_from_me {
+									format!("{}{}", " ".repeat(space), l)
+								} else { l };
 
-								if msg.is_from_me { format!("{}{}", " ".repeat(space), l) }
-								else { l }
+								MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
 							})
 							.collect();
 
@@ -146,7 +152,6 @@ impl MessagesView {
 
 						// do attachments
 						for att in msg.attachments.iter() {
-							lcm_temp.push(Style::default().fg(set.colorscheme.text_color));
 							let att_line = format!("{}Attachment {}: {}",
 											if msg.is_from_me { " ".repeat(space) }
 											else { "".to_string() },
@@ -157,9 +162,9 @@ impl MessagesView {
 								max = att_line.len();
 							}
 
-							vec.push(att_line);
+							//vec.push(att_line);
+							vec.push(MessageLine::new(att_line, MessageLineType::Text, i, msg.is_from_me));
 							att_temp.push(att.path.as_str().to_string());
-							total_msg_height += 1;
 						}
 
 						// add underline so it's pretty
@@ -168,57 +173,55 @@ impl MessagesView {
 							set.chat_underline.as_str().repeat(max)
 						);
 
-						lcm_temp.push(Style::default().fg(
-							if msg.is_from_me {
-								set.colorscheme.my_underline
-							} else {
-								set.colorscheme.their_underline
-							}
-						));
-
-						vec.push(underline);
-						total_msg_height += 1;
+						vec.push(MessageLine::new(underline, MessageLineType::Underline, i, msg.is_from_me));
 
 						vec
 					}
 				);
 
 			self.attachments = att_temp;
-			self.line_color_map = lcm_temp;
-			self.total_height = total_msg_height;
 
 		}
+
+		self.y_bounds = (self.line_list.len() as u16 - rect.height, self.line_list.len() as u16 - 1);
+		self.scroll(false, 0);
 	}
 
 	pub fn scroll(&mut self, up: bool, distance: u16) {
 
 		if !up {
 			// have to convert to signed to prevent overflow
-			self.scroll = std::cmp::max(self.scroll as i32 - distance as i32, 0) as u16;
-		} else {
-			let max = self.total_height as u16 - self.last_height;
-			self.scroll = std::cmp::min(self.scroll + distance, max);
+			self.selected_msg = std::cmp::min(self.selected_msg + distance, self.messages.len() as u16 - 1);
 
-			if self.scroll == max {
-				let new_msgs_opt = if let Ok(state) = STATE.read() {
-					if let Some(chat) = &state.current_chat {
-						Some(APICLIENT.read()
-							.unwrap()
-							.get_texts(chat.as_str().to_string(), None, Some(self.messages.len() as i64), None, None))
-					} else { None }
-				} else { None };
+			let scroll_opt = self.line_list.iter()
+				.position(|m| m.relative_index as u16 > self.selected_msg);
 
-				if let Some(mut new_msgs) = new_msgs_opt {
-					new_msgs.reverse();
-					new_msgs.append(&mut self.messages);
-					self.messages = new_msgs;
+			if let Some(mut scroll) = scroll_opt {
+				scroll += 1; // why? don't ask me. Necessary to show underline tho
 
-					self.last_height = 0;
-
-					if let Ok(mut state) = STATE.write() {
-						state.hint_msg = "loaded in more messages".to_string();
-					}
+				if self.y_bounds.1 < scroll as u16 {
+					self.y_bounds.0 += scroll as u16 - self.y_bounds.1;
+					self.y_bounds.1 = scroll as u16;
 				}
+			} else { // only if you have the last message selected
+				let scroll = self.line_list.len() as u16 + 1;
+				self.y_bounds.0 += scroll - self.y_bounds.1;
+				self.y_bounds.1 = scroll;
+			}
+		} else {
+			self.selected_msg = std::cmp::max(self.selected_msg as i32 - distance as i32, 0) as u16;
+
+			let scroll_opt = self.line_list.iter().position(|m| m.relative_index as u16 == self.selected_msg);
+			if let Some(scroll) = scroll_opt {
+
+				if self.y_bounds.0 > scroll as u16 {
+					self.y_bounds.1 -= self.y_bounds.0 - scroll as u16;
+					self.y_bounds.0 = scroll as u16;
+				}
+			}
+
+			if self.selected_msg == 0 {
+				self.load_more_texts();
 			}
 		}
 	}
@@ -228,11 +231,37 @@ impl MessagesView {
 		self.messages.reverse(); // cause ya gotta
 
 		self.last_width = 0;
-		self.scroll = 0;
+		self.selected_msg = self.messages.len() as u16 - 1;
+	}
+
+	pub fn load_more_texts(&mut self) {
+		let old_len = self.messages.len();
+
+		let new_msgs_opt = if let Ok(state) = STATE.read() {
+			if let Some(chat) = &state.current_chat {
+				Some(APICLIENT.read()
+					.unwrap()
+					.get_texts(chat.as_str().to_string(), None, Some(self.messages.len() as i64), None, None))
+			} else { None }
+		} else { None };
+
+		if let Some(mut new_msgs) = new_msgs_opt {
+			new_msgs.reverse();
+			new_msgs.append(&mut self.messages);
+			self.messages = new_msgs;
+
+			self.selected_msg = old_len as u16;
+			self.last_height = 0;
+
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "loaded in more messages".to_string();
+			}
+		}
 	}
 
 	pub fn new_text(&mut self, msg: Message) {
 		let last = self.messages.last();
+		let i = self.messages.len();
 
 		let last_timestamp = match last {
 			None => 0,
@@ -242,16 +271,14 @@ impl MessagesView {
 		// show the time display
 		if let Ok(set) = SETTINGS.read() {
 			if msg.date - last_timestamp >= 3600000000000 {
+				let date_pad = Settings::date_pad_string(msg.date, self.last_width as usize - 2);
 				let mut spans = vec![
-					"".to_string(),
-					Settings::date_pad_string(msg.date, self.last_width as usize - 2),
-					"".to_string(),
+					MessageLine::blank(i),
+					MessageLine::new(date_pad, MessageLineType::Text, i, msg.is_from_me),
+					MessageLine::blank(i),
 				];
-				self.messages_list.append(&mut spans);
 
-				self.line_color_map.append(&mut vec![Style::default().fg(set.colorscheme.text_color); 3]);
-
-				self.total_height += 3;
+				self.line_list.append(&mut spans);
 			}
 		}
 
@@ -259,15 +286,10 @@ impl MessagesView {
 		if let Some(send) = &msg.sender {
 			if last.is_none() || send != last.unwrap().sender.as_ref().unwrap() || msg.date - last_timestamp >= 3600000000000 {
 				if msg.date - last_timestamp < 3600000000000 {
-					self.messages_list.push("".to_string());
-					self.line_color_map.push(Style::default());
-					self.total_height += 1;
+					self.line_list.push(MessageLine::blank(i));
 				}
 
-				self.messages_list.push(send.to_string());
-				self.line_color_map.push(Style::default().add_modifier(Modifier::ITALIC | Modifier::BOLD));
-
-				self.total_height += 1;
+				self.line_list.push(MessageLine::new(send.to_string(), MessageLineType::Sender, i, msg.is_from_me));
 			}
 		}
 
@@ -292,7 +314,6 @@ impl MessagesView {
 
 			// do attachments
 			for att in msg.attachments.iter() {
-				self.line_color_map.push(Style::default().fg(set.colorscheme.text_color));
 				let att_line = format!("{}Attachment {}: {}",
 									if msg.is_from_me { " ".repeat(space) }
 									else { "".to_string() },
@@ -303,22 +324,21 @@ impl MessagesView {
 					max = att_line.len();
 				}
 
-				self.messages_list.push(att_line);
+				self.line_list.push(MessageLine::new(att_line, MessageLineType::Text, i, msg.is_from_me));
 				self.attachments.push(att.path.as_str().to_string());
-				self.total_height += 1;
 			}
 
-			let mut lines: Vec<String> = text_lines.into_iter()
+			let mut lines: Vec<MessageLine> = text_lines.into_iter()
 				.map(|l| {
-					self.total_height += 1;
-					self.line_color_map.push(Style::default().fg(set.colorscheme.text_color));
+					let text = if msg.is_from_me {
+						format!("{}{}", " ".repeat(space), l)
+					} else { l };
 
-					if msg.is_from_me { format!("{}{}", " ".repeat(space), l) }
-					else { l }
+					MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
 				})
 				.collect();
 
-			self.messages_list.append(&mut lines);
+			self.line_list.append(&mut lines);
 
 			// add underline so it's pretty
 			let underline = format!("{}{}",
@@ -326,16 +346,7 @@ impl MessagesView {
 				set.chat_underline.as_str().repeat(max)
 			);
 
-			self.line_color_map.push(Style::default().fg(
-				if msg.is_from_me {
-					set.colorscheme.my_underline
-				} else {
-					set.colorscheme.their_underline
-				}
-			));
-
-			self.messages_list.push(underline);
-			self.total_height += 1;
+			self.line_list.push(MessageLine::new(underline, MessageLineType::Underline, i, msg.is_from_me));
 		}
 
 		self.messages.push(msg);

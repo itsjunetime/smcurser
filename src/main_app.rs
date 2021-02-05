@@ -4,7 +4,7 @@ use crate::chats_view::*;
 use crate::messages_view::*;
 use std::{
 	vec::Vec,
-	io::Stdout,
+	io::{Stdout, Cursor},
 	thread::spawn,
 };
 use core::time::Duration;
@@ -15,6 +15,7 @@ use tui::{
 	style::Style,
 };
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
+use tungstenite::client::IntoClientRequest;
 
 pub struct MainApp {
 	input_str: String,
@@ -50,10 +51,56 @@ impl MainApp {
 		drop(set);
 
 		spawn(move || {
-			let sock_res = tungstenite::connect(url::Url::parse(server.as_str()).unwrap());
+			let dns_str = if let Ok(set) = SETTINGS.read() {
+				format!("{}:{}", set.host, set.socket_port)
+			} else {
+				"iphone.local:8741".to_string()
+			};
+
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = format!("set dns_str: {}", dns_str.as_str());
+			}
+
+			let name = webpki::DNSNameRef::try_from_ascii_str(dns_str.as_str()).expect("nope");
+
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "past nema :(".to_string();
+			}
+
+			let mut config = rustls::ClientConfig::new();
+			config.dangerous().set_certificate_verifier(Arc::new(SMServerCertVerifier{}));
+
+			let arc = Arc::new(config);
+
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = format!("set arc, name: {}", dns_str.as_str());
+			}
+
+			let mut session = rustls::ClientSession::new(&arc, name);
+
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "got past session".to_string();
+			}
+
+			let mut sock = Cursor::new(Vec::new());
+
+			let stream = rustls::Stream::new(&mut session, &mut sock);
+			let into_cr = server.into_client_request().unwrap();
+
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "got past into_cr".to_string();
+			}
+
+			//let sock_res = tungstenite::connect(url::Url::parse(server.as_str()).unwrap());
+			let sock_res = tungstenite::client::client(into_cr, stream);
 
 			match sock_res {
 				Ok((mut socket, _)) => {
+
+					if let Ok(mut state) = STATE.write() {
+						state.hint_msg = "socket is ok".to_string();
+					}
+
 					loop {
 						let msg = socket.read_message().expect("Error reading websocket message");
 						match msg {
@@ -79,9 +126,9 @@ impl MainApp {
 						}
 					}
 				},
-				Err(_) => {
+				Err(x) => {
 					if let Ok(mut state) = STATE.write() {
-						state.hint_msg = "Error: Failed to connect to websocket. New messages will not show.".to_string();
+						state.hint_msg = format!("Error: Failed to connect to websocket: {} New messages will not show.", x);
 					}
 				}
 			};
