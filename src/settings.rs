@@ -11,7 +11,8 @@ pub struct Settings {
 	pub notifications: bool,
 	pub authenticated: bool,
 	pub password: String,
-	pub current_chat_indicator: String,
+	pub current_chat_indicator: char,
+	pub unread_chat_indicator: char,
 	pub my_chat_end: String,
 	pub their_chat_end: String,
 	pub chat_underline: String,
@@ -24,7 +25,6 @@ pub struct Settings {
 	pub colorscheme: Colorscheme,
 	pub poll_exit: u16,
 	pub timeout: u16,
-	pub max_past_commands: u16,
 	pub show_help: bool,
 }
 
@@ -39,7 +39,8 @@ impl Settings {
 			notifications: true,
 			authenticated: false,
 			password: "toor".to_owned(),
-			current_chat_indicator: ">".to_owned(),
+			current_chat_indicator: '>',
+			unread_chat_indicator: '•',
 			my_chat_end: "⧹▏".to_owned(),
 			their_chat_end: "▕⧸".to_owned(),
 			chat_underline: "▔".to_owned(),
@@ -52,7 +53,6 @@ impl Settings {
 			colorscheme: Colorscheme::from(String::from("forest")),
 			poll_exit: 10,
 			timeout: 10,
-			max_past_commands: 10,
 			show_help: false,
 		}
 	}
@@ -159,6 +159,11 @@ impl Settings {
 		let mut it = args.iter();
 
 		while let Some(arg) = it.next() {
+			if !tui_mode && arg.len() > 0 && arg.chars().nth(0).unwrap() != '-' {
+				println!("Option {} not recognized. Skipping...", arg);
+				continue;
+			}
+
 			match arg.replace("--", "").as_str() {
 				"host" =>
 					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
@@ -183,9 +188,13 @@ impl Settings {
 						self.password = s;
 					},
 				"chat_indicator" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
-						self.current_chat_indicator = s;
+					if let Some(c) = self.get_char_from_it(&mut it, arg, tui_mode) {
+						self.current_chat_indicator = c;
 					},
+				"unread_indicator" =>
+					if let Some(c) = self.get_char_from_it(&mut it, arg, tui_mode) {
+						self.unread_chat_indicator = c;
+					}
 				"my_chat_end" =>
 					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
 						self.my_chat_end = s;
@@ -234,10 +243,6 @@ impl Settings {
 					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
 						self.timeout = u
 					},
-				"max_commands" =>
-					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
-						self.max_past_commands = u
-					},
 				"help" => self.show_help = self.get_bool_from_it(&mut it) && !tui_mode,
 				x => Settings::print_msg(
 					format!("Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x),
@@ -269,6 +274,22 @@ impl Settings {
 			Some(value.to_owned())
 		} else {
 			let pstr = format!("Please enter a value for the key {}", key);
+			Settings::print_msg(pstr, tui_mode);
+			None
+		}
+	}
+
+	fn get_char_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<char> {
+		if let Some(value) = it.next() {
+			if let Ok(c) = value.parse() {
+				Some(c)
+			} else {
+				let pstr = format!("Please enter a single character for the key {}", key);
+				Settings::print_msg(pstr, tui_mode);
+				None
+			}
+		} else {
+			let pstr = format!("Please enter a single character for the key {}", key);
 			Settings::print_msg(pstr, tui_mode);
 			None
 		}

@@ -1,6 +1,4 @@
 use std::{
-	sync::Arc,
-	io::Read,
 	vec::Vec,
 	result::Result,
 	path::Path,
@@ -115,7 +113,7 @@ impl APIClient {
 		let req_str = SETTINGS.read().unwrap().text_send_string();
 		let mut unfound_files = Vec::new();
 
-		let mut form: reqwest::blocking::multipart::Form =
+		let form: reqwest::blocking::multipart::Form =
 			if let Some(fil) = files {
 				fil.iter().fold(
 					reqwest::blocking::multipart::Form::new(),
@@ -148,36 +146,3 @@ impl APIClient {
 		!response.is_err()
 	}
 }
-/*
-pub struct SMServerCertVerifier {}
-
-impl ServerCertVerifier for SMServerCertVerifier {
-	fn verify_server_cert(
-		&self,
-		_roots: &RootCertStore,
-		_presented_certs: &[Certificate],
-		_dns_name: webpki::DNSNameRef<'_>,
-		_oscp_response: &[u8]
-	) -> Result<ServerCertVerified, TLSError> {
-		Ok(ServerCertVerified::assertion())
-	}
-
-	fn verify_tls12_signature(
-		&self,
-		_message: &[u8],
-		_cert: &Certificate,
-		_dss: &internal::msgs::handshake::DigitallySignedStruct,
-	) -> Result<HandshakeSignatureValid, TLSError> {
-		Ok(HandshakeSignatureValid::assertion())
-	}
-
-	fn verify_tls13_signature(
-		&self,
-		_message: &[u8],
-		_cert: &Certificate,
-		_dss: &internal::msgs::handshake::DigitallySignedStruct,
-	) -> Result<HandshakeSignatureValid, TLSError> {
-		Ok(HandshakeSignatureValid::assertion())
-	}
-}
-*/

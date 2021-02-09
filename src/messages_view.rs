@@ -42,8 +42,7 @@ impl MessagesView {
 			}
 
 			let item_list: Vec<Spans> = self.line_list.iter()
-				.enumerate()
-				.map(|(i, l)| {
+				.map(| l | {
 					let style = match l.message_type {
 						MessageLineType::Blank | MessageLineType::TimeDisplay | MessageLineType::Text =>
 							Style::default().fg(set.colorscheme.text_color),
@@ -269,17 +268,15 @@ impl MessagesView {
 		};
 
 		// show the time display
-		if let Ok(set) = SETTINGS.read() {
-			if msg.date - last_timestamp >= 3600000000000 {
-				let date_pad = Settings::date_pad_string(msg.date, self.last_width as usize - 2);
-				let mut spans = vec![
-					MessageLine::blank(i),
-					MessageLine::new(date_pad, MessageLineType::Text, i, msg.is_from_me),
-					MessageLine::blank(i),
-				];
+		if msg.date - last_timestamp >= 3600000000000 {
+			let date_pad = Settings::date_pad_string(msg.date, self.last_width as usize - 2);
+			let mut spans = vec![
+				MessageLine::blank(i),
+				MessageLine::new(date_pad, MessageLineType::Text, i, msg.is_from_me),
+				MessageLine::blank(i),
+			];
 
-				self.line_list.append(&mut spans);
-			}
+			self.line_list.append(&mut spans);
 		}
 
 		// Show the sender if it exists
@@ -350,8 +347,12 @@ impl MessagesView {
 		}
 
 		self.messages.push(msg);
+
+		self.selected_msg = self.messages.len() as u16 - 1;
+		self.scroll(false, 0);
 	}
 
+	#[allow(unused_must_use)]
 	pub fn open_attachment(&self, idx: usize) {
 		if let Ok(set) = SETTINGS.read() {
 			open::that(

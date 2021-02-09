@@ -105,6 +105,8 @@ const CMD_HELP: [&str; 47] = [
     "                                Default: toor",
     "    \x1b[1m--chat_indicator\x1b[0m <value>  : The character to use to indicate the currently selected chat",
     "                                Default: >",
+	"    \x1b[1m--unread_indicator\x1b[0m <value>: The character to use to indicate all chats with unread messages",
+	"                                Default: •",
     "    \x1b[1m--my_chat_end\x1b[0m <value>     : The tail to use on the end of your text messages",
     "                                Default: ⧹▏",
 	"    \x1b[1m--their_chat_end\x1b[0m <value>  : The tail to use on the end of their text messages",
@@ -128,7 +130,5 @@ const CMD_HELP: [&str; 47] = [
 	"    \x1b[1m--poll_exit\x1b[0m <value>       : The amount of milliseconds to poll for input",
 	"                                Default: 10",
 	"    \x1b[1m--timeout\x1b[0m <value>         : The timeout for API queries in seconds",
-	"                                Default: 10",
-	"    \x1b[1m--max_commands\x1b[0m <value>    : The maximum amount of previous commands to store when navigating up with arrow keys",
 	"                                Default: 10",
 ];

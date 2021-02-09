@@ -49,8 +49,10 @@ impl ChatsView {
 					let spans = vec![
 						Span::styled(num, Style::default().fg(set.colorscheme.text_color)),
 						match symbol {
-							'>' => Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.chat_indicator)),
-							'•' => Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.unread_indicator)),
+							_ if symbol == set.current_chat_indicator =>
+								Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.chat_indicator)),
+							_ if symbol == set.unread_chat_indicator =>
+								Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.unread_indicator)),
 							_ => Span::raw(" "),
 						},
 						Span::styled(rest.replacen(symbol, "", 1), Style::default().fg(set.colorscheme.text_color)),
@@ -65,7 +67,12 @@ impl ChatsView {
 				.borders(Borders::ALL)
 				.title(set.chats_title.as_str())
 				.border_type(BorderType::Rounded)
-				.border_style(Style::default().fg(if is_selected { set.colorscheme.selected_box } else { set.colorscheme.unselected_box }));
+				.border_style(Style::default().fg(
+						if is_selected {
+							set.colorscheme.selected_box
+						} else {
+							set.colorscheme.unselected_box
+						}));
 
 			let chats_widget = Paragraph::new(item_list)
 				.block(chats_border)
@@ -78,28 +85,36 @@ impl ChatsView {
 	pub fn rerender_list(&mut self, rect: Rect) {
 		let max_len: usize = (rect.width as u64 - 8) as usize;
 
-		self.chats_list = self.chats.iter()
-			.enumerate()
-			.map(|(i, c)| {
-				let symbol = if c.is_selected { ">" } else {
-					if c.has_unread { "•" } else { " " }
-				};
+		if let Ok(set) = SETTINGS.read() {
+			self.chats_list = self.chats.iter()
+				.enumerate()
+				.map(|(i, c)| {
+					let symbol = if c.is_selected {
+						set.current_chat_indicator
+					} else {
+						if c.has_unread { 
+							set.unread_chat_indicator
+						} else {
+							' '
+						}
+					};
 
-				let name = if c.display_name.len() > max_len {
-					format!("{}...", &c.display_name[..max_len - 3])
-				} else {
-					c.display_name.as_str().to_string()
-				};
+					let name = if c.display_name.len() > max_len {
+						format!("{}...", &c.display_name[..max_len - 3])
+					} else {
+						c.display_name.as_str().to_string()
+					};
 
-				let idx = format!("{}{}{}",
-					if i < 100 { " " } else { "" },
-					if i < 10 { " " } else { "" },
-					i
-				); // I'm just gonna hope that nobody is going 1000 chats deep lol
+					let idx = format!("{}{}{}",
+						if i < 100 { " " } else { "" },
+						if i < 10 { " " } else { "" },
+						i
+					); // I'm just gonna hope that nobody is going 1000 chats deep lol
 
-				format!("{} {} {}", idx, symbol, name)
-			})
-			.collect();
+					format!("{} {} {}", idx, symbol, name)
+				})
+				.collect();
+		}
 	}
 
 	pub fn scroll(&mut self, up: bool, distance: u16) {

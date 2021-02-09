@@ -22,6 +22,7 @@ pub struct MainApp {
 	input_left_start: i32, // what index of the input string appears at the start of the input box
 	last_selected: Option<usize>,
 	last_commands: Vec<String>,
+	tabbed_up: Option<u16>,
 	selected_box: DisplayBox,
 	quit_app: bool,
 	chats_view: ChatsView,
@@ -36,6 +37,7 @@ impl MainApp {
 			input_left_start: 0,
 			last_selected: None,
 			last_commands: Vec::new(),
+			tabbed_up: None,
 			selected_box: DisplayBox::Chats,
 			quit_app: false,
 			chats_view: ChatsView::new(),
@@ -265,6 +267,28 @@ impl MainApp {
 									state.hint_msg = "Command cancelled".to_string();
 								}
 							},
+							KeyCode::Up => {
+								if self.last_commands.len() > 0 && self.tabbed_up.is_none() {
+									self.tabbed_up = Some(0);
+									self.input_str = self.last_commands[0].as_str().to_owned();
+								} else if self.last_commands.len() as u16 > self.tabbed_up.unwrap() + 1 {
+									self.tabbed_up = Some(self.tabbed_up.unwrap() + 1);
+									self.input_str = self.last_commands[self.tabbed_up.unwrap() as usize]
+										.as_str().to_owned();
+								}
+							},
+							KeyCode::Down => {
+								if let Some(tab) = self.tabbed_up {
+									if tab == 0 {
+										self.input_str = "".to_owned();
+										self.tabbed_up = None;
+									} else {
+										self.input_str = self.last_commands[tab as usize - 1]
+											.as_str().to_owned();
+										self.tabbed_up = Some(tab - 1);
+									}
+								}
+							}
 							// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
 							// for people to invoke it to exit if that's what they're used to.
 							KeyCode::Char(c) => {
@@ -318,6 +342,8 @@ impl MainApp {
 	}
 
 	fn handle_full_input(&mut self) {
+		self.last_commands.insert(0, self.input_str.as_str().to_owned());
+
 		let mut splits = self.input_str.split(' ').collect::<Vec<&str>>();
 		let cmd = splits.drain(0..1).as_slice()[0];
 		match cmd {
@@ -339,7 +365,7 @@ impl MainApp {
 			},
 			":h" | ":H" => self.selected_box = DisplayBox::Help,
 			":s" | ":S" => {
-				let cmd = splits.join("%20"); // rust why :(
+				let cmd = splits.join(" ");
 				self.send_text(Some(cmd), None);
 			},
 			":r" | ":R" => self.chats_view.reload_chats(),
