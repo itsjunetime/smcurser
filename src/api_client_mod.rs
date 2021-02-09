@@ -1,35 +1,38 @@
-use multipart::client::lazy::Multipart;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::vec::Vec;
-use std::result::Result;
-use rustls::*;
+use std::{
+	sync::Arc,
+	io::Read,
+	vec::Vec,
+	result::Result,
+	path::Path,
+};
 use super::*;
 use models::*;
 
 pub struct APIClient {
-	agent: ureq::Agent,
+	client: reqwest::blocking::Client,
 }
 
 impl APIClient {
 	pub fn new() -> APIClient {
-		let cert_ver_arc = Arc::new(SMServerCertVerifier{});
+		let tls = native_tls::TlsConnector::builder()
+			.use_sni(false)
+			.danger_accept_invalid_certs(true)
+			.danger_accept_invalid_hostnames(true)
+			.build()
+			.unwrap();
 
-		let mut config = ClientConfig::new();
-		config.dangerous().set_certificate_verifier(cert_ver_arc);
+		let client = reqwest::blocking::Client::builder()
+			.use_preconfigured_tls(tls)
+			.build()
+			.unwrap();
 
-		let agent = ureq::builder().tls_config(Arc::new(config.clone())).build();
-
-		APIClient { agent }
+		APIClient { client }
 	}
 
-	pub fn get_url_string(&self, url: &str) -> Result<String, ureq::Error> {
-		let response = self.agent.get(url).call();
+	pub fn get_url_string(&self, url: &str) -> Result<String, reqwest::Error> {
+		let response = self.client.get(url).send()?;
 
-		match response {
-			Err(err) => Err(err),
-			Ok(res) => Ok(res.into_string().unwrap()),
-		}
+		Ok(response.text().unwrap())
 	}
 
 	pub fn authenticate(&self) -> bool {
@@ -37,7 +40,10 @@ impl APIClient {
 		let res = self.get_url_string(&url);
 
 		let got_auth =  match res {
-			Err(_) => false,
+			Err(err) => {
+				println!("err: {}", err);
+				false
+			},
 			Ok(val) => val.to_string().parse().unwrap_or_else(|_| false),
 		};
 
@@ -51,7 +57,11 @@ impl APIClient {
 	}
 
 	pub fn check_auth(&self) -> bool {
-		if !SETTINGS.read().unwrap().authenticated { self.authenticate() } else { true }
+		if !SETTINGS.read().unwrap().authenticated {
+			self.authenticate()
+		} else {
+			true
+		}
 	}
 
 	pub fn get_chats(&self, num: Option<i64>, offset: Option<i64>) -> Vec<Conversation> {
@@ -59,8 +69,9 @@ impl APIClient {
 
 		let req_str = SETTINGS.read().unwrap().chat_req_string(num, offset);
 
-		let response = self.get_url_string(&req_str);
-		let json: serde_json::Value = serde_json::from_str(&(response.unwrap())).expect("Bad JSON :(");
+		let response = self.get_url_string(&req_str).unwrap();
+
+		let json: serde_json::Value = serde_json::from_str(&response).expect("Bad JSON :(");
 		let mut ret_vec = Vec::new();
 
 		let obj = json.as_object().unwrap();
@@ -102,58 +113,42 @@ impl APIClient {
 		if !self.check_auth() { return false; }
 
 		let req_str = SETTINGS.read().unwrap().text_send_string();
+		let mut unfound_files = Vec::new();
 
-		/*
-		// credit for basically this whole thing goes to https://gist.github.com/jhwgh1968/3cd073677f74506474bbcbcadeffb0ee
-		let mut vals = Multipart::new();
+		let mut form: reqwest::blocking::multipart::Form =
+			if let Some(fil) = files {
+				fil.iter().fold(
+					reqwest::blocking::multipart::Form::new(),
+					| fold_form, file | {
+						if Path::new(file).exists() {
+							fold_form.file("attachments", file).unwrap()
+						} else {
+							unfound_files.push(file.as_str().to_owned());
+							fold_form
+						}
+				})
+			} else {
+				reqwest::blocking::multipart::Form::new()
+			}
+			.text("chat", chat_id)
+			.text("text", body.unwrap_or("".to_owned()))
+			.text("subject", subject.unwrap_or("".to_owned()))
+			.text("photos", photos.unwrap_or("".to_owned()));
 
-		vals.add_text("chat", chat_id);
-
-		if let Some(fil) = files {
-			for f in fil.iter() {
-				let path_buf = PathBuf::from(f);
-				let file = std::fs::File::open(&path_buf).expect("");
-				let extension = path_buf.extension().and_then(|s| s.to_str()).unwrap_or("");
-				let mime = mime_guess::from_ext(&extension).first_or_octet_stream();
-				vals.add_stream("attachments", file, Some("blob"), Some(mime));
+		if unfound_files.len() > 0 {
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = format!("Could not find the following files to send: {}", unfound_files.join(", "));
 			}
 		}
 
-		if let Some(subj) = subject {
-			vals.add_text("subject", subj);
-		}
-
-		if let Some(ph) = photos {
-			vals.add_text("photos", ph);
-		}
-
-		if let Some(bod) = body {
-			vals.add_text("text", bod);
-		}
-
-		let stream = vals.prepare().unwrap();
-
-		let response = self.agent.post(&req_str)
-			.set(
-				"Content-Type",
-				&format!("multipart/form-data; boundary={}", stream.boundary()),
-			)
-			.send(stream);
-		*/
-
-		let vals = &[
-			("chat", chat_id.as_str()),
-			("text", &body.unwrap_or_default()),
-			("subject", &subject.unwrap_or_default()),
-			("photos", &photos.unwrap_or_default()),
-		]; // works but doesn't have support for sending files. I'll fix that...
-
-		let response = self.agent.post(&req_str).send_form(vals);
+		let response = self.client.post(&req_str)
+			.multipart(form)
+			.send();
 
 		!response.is_err()
 	}
 }
-
+/*
 pub struct SMServerCertVerifier {}
 
 impl ServerCertVerifier for SMServerCertVerifier {
@@ -185,3 +180,4 @@ impl ServerCertVerifier for SMServerCertVerifier {
 		Ok(HandshakeSignatureValid::assertion())
 	}
 }
+*/

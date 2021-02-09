@@ -4,7 +4,7 @@ use crate::chats_view::*;
 use crate::messages_view::*;
 use std::{
 	vec::Vec,
-	io::{Stdout, Cursor},
+	io::{Stdout, Error, ErrorKind},
 	thread::spawn,
 };
 use core::time::Duration;
@@ -15,7 +15,6 @@ use tui::{
 	style::Style,
 };
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
-use tungstenite::client::IntoClientRequest;
 
 pub struct MainApp {
 	input_str: String,
@@ -44,63 +43,50 @@ impl MainApp {
 		}
 	}
 
-	pub fn main_loop(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
+	pub fn main_loop(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Error> {
+
+		// just to make sure
+		let good = APICLIENT.read().unwrap().check_auth();
+
+		if !good {
+			println!("Failed to authenticate. Check your password and/or hostname");
+			return Err(Error::new(ErrorKind::Other, "Failed to authenticate"));
+		}
 
 		let set = SETTINGS.read().unwrap();
-		let server = format!("ws{}://{}:{}", if set.secure { "s" } else { "" }, set.host, set.socket_port);
+		let host = set.host.as_str().to_owned();
+		let port = set.socket_port;
+		let sec = set.secure;
 		drop(set);
 
 		spawn(move || {
-			let dns_str = if let Ok(set) = SETTINGS.read() {
-				format!("{}:{}", set.host, set.socket_port)
-			} else {
-				"iphone.local:8741".to_string()
-			};
+			let config = Some(tungstenite::protocol::WebSocketConfig {
+				max_send_queue: None,
+				max_message_size: None,
+				max_frame_size: None,
+				accept_unmasked_frames: false
+			});
 
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = format!("set dns_str: {}", dns_str.as_str());
-			}
+			let connector = native_tls::TlsConnector::builder()
+				.danger_accept_invalid_certs(true)
+				.danger_accept_invalid_hostnames(true)
+				.build()
+				.unwrap();
 
-			let name = webpki::DNSNameRef::try_from_ascii_str(dns_str.as_str()).expect("nope");
+			let stream = std::net::TcpStream::connect(format!("{}:{}", host, port)).unwrap();
+			let tls_stream = connector.connect(&host, stream).unwrap();
+			let parsed_url = url::Url::parse(
+				&format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port)
+			).unwrap();
 
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "past nema :(".to_string();
-			}
-
-			let mut config = rustls::ClientConfig::new();
-			config.dangerous().set_certificate_verifier(Arc::new(SMServerCertVerifier{}));
-
-			let arc = Arc::new(config);
-
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = format!("set arc, name: {}", dns_str.as_str());
-			}
-
-			let mut session = rustls::ClientSession::new(&arc, name);
-
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "got past session".to_string();
-			}
-
-			let mut sock = Cursor::new(Vec::new());
-
-			let stream = rustls::Stream::new(&mut session, &mut sock);
-			let into_cr = server.into_client_request().unwrap();
-
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "got past into_cr".to_string();
-			}
-
-			//let sock_res = tungstenite::connect(url::Url::parse(server.as_str()).unwrap());
-			let sock_res = tungstenite::client::client(into_cr, stream);
+			let sock_res = tungstenite::client::client_with_config(
+				parsed_url,
+				tls_stream,
+				config
+			);
 
 			match sock_res {
 				Ok((mut socket, _)) => {
-
-					if let Ok(mut state) = STATE.write() {
-						state.hint_msg = "socket is ok".to_string();
-					}
-
 					loop {
 						let msg = socket.read_message().expect("Error reading websocket message");
 						match msg {
@@ -376,6 +362,7 @@ impl MainApp {
 					state.hint_msg = "Please insert an index".to_string();
 				}
 			},
+			":f" | ":F" => self.send_attachments(splits),
 			x => {
 				if let Ok(mut state) = STATE.write() {
 					state.hint_msg = format!("Command {} not recognized", x);
@@ -455,10 +442,17 @@ impl MainApp {
 		}
 	}
 
-	fn send_text(&mut self, text: Option<String>, files: Option<String>) {
+	fn send_text(&self, text: Option<String>, files: Option<Vec<String>>) {
 		if let Some(sel) = self.last_selected {
-			let in_files = if let Some(fil) = files { vec![fil] } else { Vec::new() };
-			let id = self.chats_view.chats[sel].chat_identifier.to_string();
+			let in_files = if let Some(fil) = files {
+				fil
+			} else {
+				Vec::new()
+			};
+
+			let id = self.chats_view.chats[sel]
+				.chat_identifier
+				.to_string();
 
 			let sent = APICLIENT.read().unwrap()
 				.send_text(text, None, id, Some(in_files), None);
@@ -471,6 +465,44 @@ impl MainApp {
 				}).to_string();
 			}
 		}
+	}
+
+	fn send_attachments(&self, files: Vec<&str>) {
+		let orig = files.join(" ");
+		let bad_chars = [' ', '\t', '"', '\\'];
+
+		let mut files_to_send: Vec<String> = Vec::new();
+		let mut in_quotes = false;
+		let mut escaped = false;
+		let mut curr_string: String = "".to_owned();
+
+		for c in orig.chars() {
+			if !bad_chars.contains(&c) || escaped || (in_quotes && c != '"') {
+				curr_string.push(c);
+				escaped = false;
+			} else {
+				if c == '\\' {
+					escaped = true;
+				} else if c == '"' {
+					if in_quotes {
+						files_to_send.push(curr_string);
+						curr_string = "".to_owned();
+					}
+					in_quotes = !in_quotes;
+				} else if c == ' ' || c == '\t' {
+					if curr_string.len() > 0 && !in_quotes {
+						files_to_send.push(curr_string);
+						curr_string = "".to_owned();
+					}
+				}
+			}
+		}
+
+		if curr_string.len() > 0 {
+			files_to_send.push(curr_string);
+		}
+
+		self.send_text(None, Some(files_to_send));
 	}
 
 	fn bind_var(&mut self, ops: Vec<String>) {
