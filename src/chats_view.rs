@@ -92,7 +92,7 @@ impl ChatsView {
 					let symbol = if c.is_selected {
 						set.current_chat_indicator
 					} else {
-						if c.has_unread { 
+						if c.has_unread {
 							set.unread_chat_indicator
 						} else {
 							' '

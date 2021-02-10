@@ -55,6 +55,23 @@ impl MainApp {
 			return Err(Error::new(ErrorKind::Other, "Failed to authenticate"));
 		}
 
+		self.setup_socket();
+
+		let _ = crossterm::terminal::enable_raw_mode();
+
+		// draw, get input, redraw with new state, get input, etc.
+		while !self.quit_app {
+			self.draw(term)?;
+
+			let _ = self.get_input();
+		}
+
+		let _ = crossterm::terminal::disable_raw_mode(); // i just be ignoring results tho
+
+		Ok(())
+	}
+
+	fn setup_socket(&mut self) {
 		let set = SETTINGS.read().unwrap();
 		let host = set.host.as_str().to_owned();
 		let port = set.socket_port;
@@ -122,19 +139,6 @@ impl MainApp {
 			};
 
 		});
-
-		let _ = crossterm::terminal::enable_raw_mode();
-
-		// draw, get input, redraw with new state, get input, etc.
-		while !self.quit_app {
-			self.draw(term)?;
-
-			let _ = self.get_input();
-		}
-
-		let _ = crossterm::terminal::disable_raw_mode(); // i just be ignoring results tho
-
-		Ok(())
 	}
 
 	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
@@ -257,8 +261,14 @@ impl MainApp {
 								}
 							},
 							// will add tab completion for file selection later
-							KeyCode::Tab => if self.input_str.len() > 0 {
+							KeyCode::Tab => if self.input_str.len() > 0 &&
+								&self.input_str[..3] != ":f " &&
+								&self.input_str[..3] != ":F " {
+
 								self.input_str.push_str("	");
+
+							} else {
+								self.handle_tab_completion();
 							},
 							// easy way to cancel what you're typing
 							KeyCode::Esc => {
@@ -495,14 +505,21 @@ impl MainApp {
 
 	fn send_attachments(&self, files: Vec<&str>) {
 		let orig = files.join(" ");
+
+		let files_to_send = self.get_typed_attachments(orig);
+
+		self.send_text(None, Some(files_to_send));
+	}
+
+	fn get_typed_attachments(&self, input: String) -> Vec<String> {
 		let bad_chars = [' ', '\t', '"', '\\'];
 
-		let mut files_to_send: Vec<String> = Vec::new();
+		let mut files: Vec<String> = Vec::new();
 		let mut in_quotes = false;
 		let mut escaped = false;
 		let mut curr_string: String = "".to_owned();
 
-		for c in orig.chars() {
+		for c in input.chars() {
 			if !bad_chars.contains(&c) || escaped || (in_quotes && c != '"') {
 				curr_string.push(c);
 				escaped = false;
@@ -511,13 +528,13 @@ impl MainApp {
 					escaped = true;
 				} else if c == '"' {
 					if in_quotes {
-						files_to_send.push(curr_string);
+						files.push(curr_string);
 						curr_string = "".to_owned();
 					}
 					in_quotes = !in_quotes;
 				} else if c == ' ' || c == '\t' {
 					if curr_string.len() > 0 && !in_quotes {
-						files_to_send.push(curr_string);
+						files.push(curr_string);
 						curr_string = "".to_owned();
 					}
 				}
@@ -525,10 +542,10 @@ impl MainApp {
 		}
 
 		if curr_string.len() > 0 {
-			files_to_send.push(curr_string);
+			files.push(curr_string);
 		}
 
-		self.send_text(None, Some(files_to_send));
+		return files;
 	}
 
 	fn bind_var(&mut self, ops: Vec<String>) {
@@ -545,6 +562,111 @@ impl MainApp {
 
 		if let Ok(mut set) = SETTINGS.write() {
 			set.parse_args(new_ops, true);
+		}
+	}
+
+	fn handle_tab_completion(&mut self) {
+		// So this is my messy attempt at tab completion. It actually works ok-ish
+		// It doesn't work on Windows rn (I think) since it sees directory separators
+		// as '/' instead of '\'.
+
+		let mut splits = self.input_str.split(" ").collect::<Vec<&str>>();
+		splits.remove(0);
+		let input = splits.join(" ");
+
+		// this gets a list of the currently input attachments,
+		// with support for escaping spaces with backslashes and quotes
+		let incomplete_opt = self.get_typed_attachments(input);
+
+		// if there are no attachments input, just exit
+		if incomplete_opt.len() == 0 {
+			return;
+		}
+
+		// get the path for the attachment that hasn't fully been input yet
+		let incomplete = incomplete_opt.last().unwrap();
+
+		// separate it by "/", join all but last since that is probably
+		// the file that hasn't fully been input yet
+		let mut top_dirs = incomplete.split("/").collect::<Vec<&str>>();
+		let first_file = top_dirs.drain(top_dirs.len() - 1..top_dirs.len())
+			.collect::<Vec<&str>>()
+			.join("");
+
+		// TODO: Add support for Windows with its weird \ instead of /
+
+		// Here we iterate over the parent directories and make sure they weren't
+		// escaping a "/" with a "\" in the file that wasn't fully input yet
+		let mut to_drop = 0;
+
+		for c in top_dirs.iter().rev() {
+			if c.len() > 0 && c.chars().last().unwrap() == '\\' {
+				to_drop += 1;
+			} else {
+				break;
+			}
+		}
+
+		// Set poss_files to the beginning of the file that they
+		// may have been trying to escape
+		let poss_files = if to_drop > 0 {
+			top_dirs.drain(top_dirs.len() - to_drop..top_dirs.len())
+				.collect::<Vec<&str>>()
+				.join("")
+		} else {
+			"".to_owned()
+		};
+
+		// Set file to the whole untyped file name, including the possibly escaped sections
+		let file = format!("{}{}{}",
+			poss_files,
+			if to_drop > 0 { "/" } else { "" },
+			first_file
+		);
+
+		// dir = the whole parent directory for the file they were entering
+		let dir = top_dirs.join("/");
+		let dir_contents = std::fs::read_dir(&dir);
+
+		match dir_contents {
+			Err(_) => return,
+			Ok(items) => {
+				for item in items {
+					let path = item.unwrap().path();
+
+					// tmp_path = the file or dir name (including dot
+					// between name and extension or trailing slash for directory
+					let tmp_path = format!("{}{}{}",
+						if let Some(fs) = path.file_stem() {
+							fs.to_str().unwrap()
+						} else { "" },
+						if let Some(ex) = path.extension() {
+							format!(".{}", ex.to_str().unwrap())
+						} else { "".to_owned() },
+						if path.is_dir() {
+							"/"
+						} else { "" }
+					);
+
+					let path_str = tmp_path.as_str();
+
+					// if the file that is currently being iterated over is the same length or
+					// shorter than what they've input, don't even try to match it
+					if path_str.len() <= file.len() {
+						continue
+					}
+
+					// If it's a possibility for the file they were trying to input, auto-fill the
+					// input string with the whole file path
+					if path_str[..file.len()] == file {
+						let full_path = format!("{}/{}", dir, path_str);
+
+						self.input_str.truncate(self.input_str.len() - incomplete.len());
+						self.input_str = format!("{}{}", self.input_str, full_path);
+						break;
+					}
+				}
+			},
 		}
 	}
 }
