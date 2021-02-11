@@ -5,7 +5,7 @@ use crate::messages_view::*;
 use std::{
 	vec::Vec,
 	io::{Stdout, Error, ErrorKind},
-	thread::spawn,
+	thread::{spawn, sleep},
 };
 use core::time::Duration;
 use tui::{
@@ -25,6 +25,7 @@ pub struct MainApp {
 	tabbed_up: Option<u16>,
 	selected_box: DisplayBox,
 	quit_app: bool,
+	redraw_all: bool,
 	chats_view: ChatsView,
 	messages_view: MessagesView,
 }
@@ -40,6 +41,7 @@ impl MainApp {
 			tabbed_up: None,
 			selected_box: DisplayBox::Chats,
 			quit_app: false,
+			redraw_all: false,
 			chats_view: ChatsView::new(),
 			messages_view: MessagesView::new(),
 		}
@@ -64,6 +66,11 @@ impl MainApp {
 			self.draw(term)?;
 
 			let _ = self.get_input();
+
+			if self.redraw_all {
+				term.resize(term.size()?)?;
+				self.redraw_all = false;
+			}
 		}
 
 		let _ = crossterm::terminal::disable_raw_mode(); // i just be ignoring results tho
@@ -79,64 +86,75 @@ impl MainApp {
 		drop(set);
 
 		spawn(move || {
-			let config = Some(tungstenite::protocol::WebSocketConfig {
-				max_send_queue: None,
-				max_message_size: None,
-				max_frame_size: None,
-				accept_unmasked_frames: false
-			});
+			let sock_res_template = | | {
+				let config = Some(tungstenite::protocol::WebSocketConfig {
+					max_send_queue: None,
+					max_message_size: None,
+					max_frame_size: None,
+					accept_unmasked_frames: false
+				});
 
-			let connector = native_tls::TlsConnector::builder()
-				.danger_accept_invalid_certs(true)
-				.danger_accept_invalid_hostnames(true)
-				.build()
-				.unwrap();
+				let connector = native_tls::TlsConnector::builder()
+					.danger_accept_invalid_certs(true)
+					.danger_accept_invalid_hostnames(true)
+					.build()
+					.unwrap();
 
-			let stream = std::net::TcpStream::connect(format!("{}:{}", host, port)).unwrap();
-			let tls_stream = connector.connect(&host, stream).unwrap();
-			let parsed_url = url::Url::parse(
-				&format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port)
-			).unwrap();
+				let stream = std::net::TcpStream::connect(format!("{}:{}", host, port)).unwrap();
+				let tls_stream = connector.connect(&host, stream).unwrap();
+				let parsed_url = url::Url::parse(
+					&format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port)
+				).unwrap();
 
-			let sock_res = tungstenite::client::client_with_config(
-				parsed_url,
-				tls_stream,
-				config
-			);
+				tungstenite::client::client_with_config(
+					parsed_url,
+					tls_stream,
+					config
+				)
+			};
 
-			match sock_res {
-				Ok((mut socket, _)) => {
-					loop {
-						let msg = socket.read_message().expect("Error reading websocket message");
-						match msg {
-							tungstenite::Message::Text(val) => {
-								let mut splits = val.splitn(2, ':');
-								let prefix = splits.next().unwrap();
-								let content = splits.next().unwrap();
+			let mut sock_res = sock_res_template();
 
-								match prefix {
-									"text" => {
-										let json: serde_json::Value = serde_json::from_str(&content).unwrap();
-										let text_json: serde_json::Map<String, serde_json::Value> =
-											json["text"].as_object().unwrap().to_owned();
+			loop {
+				match sock_res {
+					Ok((mut socket, _)) => {
+						loop {
+							let msg = socket.read_message();
+							match msg {
+								Ok(tungstenite::Message::Text(val)) => {
+									let mut splits = val.splitn(2, ':');
+									let prefix = splits.next().unwrap();
+									let content = splits.next().unwrap();
 
-										if let Ok(mut state) = STATE.write() {
-											state.new_text = Some(text_json);
-										}
-									},
-									&_ => (),
-								}
-							},
-							_ => (),
+									match prefix {
+										"text" => {
+											let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+											let text_json: serde_json::Map<String, serde_json::Value> =
+												json["text"].as_object().unwrap().to_owned();
+
+											if let Ok(mut state) = STATE.write() {
+												state.new_text = Some(text_json);
+											}
+										},
+										&_ => (),
+									}
+								},
+								Err(_) => {
+									sleep(Duration::from_secs(2));
+									sock_res = sock_res_template();
+									break;
+								},
+								_ => (),
+							}
+						}
+					},
+					Err(ref x) => {
+						if let Ok(mut state) = STATE.write() {
+							state.hint_msg = format!("Error: Failed to connect to websocket: {} New messages will not show.", x);
 						}
 					}
-				},
-				Err(x) => {
-					if let Ok(mut state) = STATE.write() {
-						state.hint_msg = format!("Error: Failed to connect to websocket: {} New messages will not show.", x);
-					}
-				}
-			};
+				};
+			}
 
 		});
 	}
@@ -378,7 +396,10 @@ impl MainApp {
 				let cmd = splits.join(" ");
 				self.send_text(Some(cmd), None);
 			},
-			":r" | ":R" => self.chats_view.reload_chats(),
+			":r" | ":R" => {
+				self.redraw_all = true;
+				self.chats_view.reload_chats();
+			},
 			":b" | ":B" => {
 				let ops = splits.iter().map(|o| o.to_string()).collect::<Vec<String>>();
 				self.bind_var(ops);
