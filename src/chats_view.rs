@@ -33,6 +33,7 @@ impl ChatsView {
 
 	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect, is_selected: bool) {
 		if let Ok(set) = SETTINGS.read() {
+			let colorscheme = colorscheme::Colorscheme::from(&set.colorscheme);
 
 			if rect.width != self.last_width || rect.height != self.last_height {
 				self.rerender_list(rect);
@@ -47,15 +48,15 @@ impl ChatsView {
 					let symbol = rest.chars().nth(0).unwrap();
 
 					let spans = vec![
-						Span::styled(num, Style::default().fg(set.colorscheme.text_color)),
+						Span::styled(num, Style::default().fg(colorscheme.text_color)),
 						match symbol {
 							_ if symbol == set.current_chat_indicator =>
-								Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.chat_indicator)),
+								Span::styled(String::from(symbol), Style::default().fg(colorscheme.chat_indicator)),
 							_ if symbol == set.unread_chat_indicator =>
-								Span::styled(String::from(symbol), Style::default().fg(set.colorscheme.unread_indicator)),
+								Span::styled(String::from(symbol), Style::default().fg(colorscheme.unread_indicator)),
 							_ => Span::raw(" "),
 						},
-						Span::styled(rest.replacen(symbol, "", 1), Style::default().fg(set.colorscheme.text_color)),
+						Span::styled(rest.replacen(symbol, "", 1), Style::default().fg(colorscheme.text_color)),
 					];
 
 					s.push(Spans::from(vec![Span::raw("")]));
@@ -69,9 +70,9 @@ impl ChatsView {
 				.border_type(BorderType::Rounded)
 				.border_style(Style::default().fg(
 						if is_selected {
-							set.colorscheme.selected_box
+							colorscheme.selected_box
 						} else {
-							set.colorscheme.unselected_box
+							colorscheme.unselected_box
 						}));
 
 			let chats_widget = Paragraph::new(item_list)

@@ -34,6 +34,8 @@ impl MessagesView {
 
 	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect, is_selected: bool) {
 		if let Ok(set) = SETTINGS.read() {
+			let colorscheme = colorscheme::Colorscheme::from(&set.colorscheme);
+
 			if rect.width != self.last_width || rect.height != self.last_height {
 				self.rerender_list(rect);
 
@@ -45,17 +47,17 @@ impl MessagesView {
 				.map(| l | {
 					let style = match l.message_type {
 						MessageLineType::Blank | MessageLineType::TimeDisplay | MessageLineType::Text =>
-							Style::default().fg(set.colorscheme.text_color),
+							Style::default().fg(colorscheme.text_color),
 						MessageLineType::Sender =>
-							Style::default().fg(set.colorscheme.text_color).add_modifier(Modifier::ITALIC | Modifier::BOLD),
+							Style::default().fg(colorscheme.text_color).add_modifier(Modifier::ITALIC | Modifier::BOLD),
 						MessageLineType::Underline =>
 							Style::default().fg(
 								if l.relative_index as u16 == self.selected_msg {
-									set.colorscheme.selected_underline
+									colorscheme.selected_underline
 								} else if l.from_me {
-									set.colorscheme.my_underline
+									colorscheme.my_underline
 								} else {
-									set.colorscheme.their_underline
+									colorscheme.their_underline
 								}
 							),
 					};
@@ -69,7 +71,13 @@ impl MessagesView {
 				.borders(Borders::ALL)
 				.title(set.messages_title.as_str())
 				.border_type(BorderType::Rounded)
-				.border_style(Style::default().fg(if is_selected { set.colorscheme.selected_box } else { set.colorscheme.unselected_box }));
+				.border_style(Style::default().fg(
+					if is_selected {
+						colorscheme.selected_box
+					} else {
+						colorscheme.unselected_box
+					}
+				));
 
 			// create the widget and scroll it to the correct location
 			let mut messages_widget = Paragraph::new(item_list).block(messages_border);

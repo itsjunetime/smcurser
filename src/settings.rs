@@ -1,7 +1,9 @@
 use crate::*;
 use crate::colorscheme::*;
 use chrono::prelude::*;
+use serde::Deserialize;
 
+#[derive(Deserialize)]
 pub struct Settings {
 	pub host: String,
 	pub fallback_host: String,
@@ -22,14 +24,23 @@ pub struct Settings {
 	pub help_title: String,
 	pub to_title: String,
 	pub compose_title: String,
-	pub colorscheme: Colorscheme,
+	pub colorscheme: String,
 	pub poll_exit: u16,
 	pub timeout: u16,
 	pub show_help: bool,
+	pub config_file: String,
 }
 
 impl Settings {
 	pub fn default() -> Settings {
+		let home = match std::env::var("HOME") {
+			Ok(var) => var,
+			Err(_) => std::env::var("XDG_HOME")
+				.expect("Please set either the HOME or XDG_HOME environment variable"),
+		};
+
+		let config_file = format!("{}/.config/smserver/smserver.toml", home);
+
 		Settings {
 			host: "".to_owned(),
 			fallback_host: "".to_owned(),
@@ -50,10 +61,11 @@ impl Settings {
 			help_title: "| help |".to_owned(),
 			to_title: "| to: |".to_owned(),
 			compose_title: "| message: |".to_owned(),
-			colorscheme: Colorscheme::from(String::from("forest")),
+			colorscheme: "forest".to_owned(),
 			poll_exit: 10,
 			timeout: 10,
 			show_help: false,
+			config_file: config_file,
 		}
 	}
 
@@ -155,7 +167,21 @@ impl Settings {
 		self.push_to_req_url(format!("data?path={}", path))
 	}
 
-	pub fn parse_args(&mut self, args: Vec<String>, tui_mode: bool) {
+	pub fn parse_args(&mut self, mut args: Vec<String>, tui_mode: bool) {
+		let pos = args.iter().position(|a| a.as_str() == "--config");
+
+		if let Some(p) = pos {
+			if p + 1 < args.len() {
+				let _ = args.drain(p..p+1).nth(0);
+				let new_conf = args.drain(p..p+1).nth(0);
+				if let Some(conf) = new_conf {
+					self.config_file = conf;
+				}
+			}
+		}
+
+		self.parse_config_file();
+
 		let mut it = args.iter();
 
 		while let Some(arg) = it.next() {
@@ -233,7 +259,7 @@ impl Settings {
 					},
 				"colorscheme" =>
 					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
-						self.colorscheme = Colorscheme::from(s);
+						self.colorscheme = s;
 					},
 				"poll_exit" =>
 					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
@@ -241,7 +267,7 @@ impl Settings {
 					},
 				"timeout" =>
 					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
-						self.timeout = u
+						self.timeout = u;
 					},
 				"help" => self.show_help = self.get_bool_from_it(&mut it) && !tui_mode,
 				x => Settings::print_msg(
@@ -250,7 +276,25 @@ impl Settings {
 				),
 			}
 		}
+	}
 
+	pub fn parse_config_file(&mut self) {
+		let contents_try = std::fs::read_to_string(&self.config_file);
+
+		if let Ok(contents) = contents_try {
+			let sets_try = toml::from_str(&contents);
+
+			if let Ok(sets) = sets_try {
+				*self = sets;
+			} else if let Err(err) = sets_try {
+				Settings::print_msg(
+					format!("There is an error with your config file; you may be missing some or all of the required fields: {}", err),
+					false
+				);
+			}
+		} else {
+			Settings::print_msg(format!("No config file exists at {}. Ignoring...", self.config_file), false);
+		}
 	}
 
 	fn get_u16_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<u16> {

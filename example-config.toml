@@ -1,0 +1,32 @@
+# You must include all of the following fields in this toml file, if it exists. If you don't, it won't be parsed.
+
+host = "192.168.0.180"
+fallback_host = "10.37.68.248"
+server_port = 8741
+socket_port = 8740
+
+secure = true
+notifications = true
+authenticated = false
+
+password = "toor"
+colorscheme = "rose-pine"
+
+current_chat_indicator = ">"
+unread_chat_indicator = "•"
+
+my_chat_end = "⧹▏"
+their_chat_end = "▕⧸"
+chat_underline = "▔"
+
+chats_title = "| chats |"
+messages_title = "| messages |"
+input_title = "| input here :) |"
+help_title = "| help |"
+to_title = "| to: |"
+compose_title = "| message: |"
+
+poll_exit = 10
+timeout = 10
+show_help = false
+config_file = "~/.config/smserver/smserver.toml"

@@ -47,11 +47,18 @@ impl MainApp {
 
 	pub fn main_loop(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Error> {
 
+		if let Ok(set) = SETTINGS.read() {
+			if set.host.len() == 0 {
+				eprintln!("You didn't specify a host to connect to. Please either edit your config file to include a host or pass one in after the \x1b[1m--host\x1b[0m flag");
+				return Err(Error::new(ErrorKind::Other, "No specified host"));
+			}
+		}
+
 		// just to make sure
 		let good = APICLIENT.read().unwrap().check_auth();
 
 		if !good {
-			println!("Failed to authenticate. Check your password and/or hostname");
+			eprintln!("Failed to authenticate. Check your password and/or hostname");
 			return Err(Error::new(ErrorKind::Other, "Failed to authenticate"));
 		}
 
@@ -144,6 +151,7 @@ impl MainApp {
 	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
 		// gotta make sure we can actually access the settings
 		if let Ok(set) = SETTINGS.read() {
+			let colorscheme = colorscheme::Colorscheme::from(&set.colorscheme);
 
 			// this just draws the actual tui display.
 			term.draw(|f| {
@@ -195,7 +203,7 @@ impl MainApp {
 									.title(set.input_title.as_str())
 									.borders(Borders::ALL)
 									.border_type(BorderType::Rounded)
-									.border_style(Style::default().fg(set.colorscheme.unselected_box))
+									.border_style(Style::default().fg(colorscheme.unselected_box))
 							);
 						f.render_widget(input_widget, main_layout[1]);
 
@@ -207,7 +215,7 @@ impl MainApp {
 						} else {
 							"type :h to get help :)".to_string()
 						};
-						let help_span = vec![Spans::from(vec![Span::styled(hint_msg, Style::default().fg(set.colorscheme.hints_box))])];
+						let help_span = vec![Spans::from(vec![Span::styled(hint_msg, Style::default().fg(colorscheme.hints_box))])];
 						let help_widget = Paragraph::new(help_span);
 						f.render_widget(help_widget, main_layout[2]);
 					}

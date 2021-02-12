@@ -1,6 +1,7 @@
 use tui::style::Color;
+use serde::Deserialize;
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Deserialize)]
 pub struct Colorscheme {
 	pub selected_box: Color,
 	pub unselected_box: Color,
