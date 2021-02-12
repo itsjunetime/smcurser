@@ -140,7 +140,21 @@ impl MainApp {
 												json["text"].as_object().unwrap().to_owned();
 
 											if let Ok(mut state) = STATE.write() {
-												state.new_text = Some(text_json);
+												state.new_text = Some(Message::from_json(&text_json));
+											}
+										},
+										"typing" => {
+											let typing_text = Message::typing(content);
+
+											if let Ok(mut state) = STATE.write() {
+												state.new_text = Some(typing_text);
+											}
+										},
+										"idle" => {
+											let idle_text = Message::idle(content);
+
+											if let Ok(mut state) = STATE.write() {
+												state.new_text = Some(idle_text);
 											}
 										},
 										&_ => (),
@@ -247,20 +261,27 @@ impl MainApp {
 	fn get_input(&mut self) -> crossterm::Result<()> {
 		// we have to loop this so that if it gets a character/input we don't want,
 		// we can just grab the next character/input instead.
-
 		let mut distance = "".to_string();
 
 		loop {
 			if !poll(Duration::from_millis(20)).unwrap() {
-				let new_text = if let Ok(state) = STATE.read() {
+				// first check if there's actually an unread text
+				let has_unread = if let Ok(state) = STATE.read() {
 					state.new_text.is_some()
-				} else {
-					false
-				};
+				} else { false };
 
-				if new_text {
-					self.load_in_text();
-					break;
+				if has_unread {
+					if let Ok(mut state) = STATE.write() {
+						// swap the new text out for `None`
+						let mut none_text: Option<Message> = None;
+						std::mem::swap(&mut none_text, &mut state.new_text);
+
+						// send the new text to the load in function
+						if let Some(txt) = none_text {
+							self.load_in_text(txt);
+						}
+						break;
+					}
 				}
 			} else {
 				match read()? {
@@ -478,32 +499,37 @@ impl MainApp {
 		}
 	}
 
-	fn load_in_text(&mut self) {
-		let text_opt = if let Ok(state) = STATE.read() {
-			if let Some(text_map) = &state.new_text {
-				Some(Message::from_json(&text_map))
-			} else { None }
-		} else { None };
+	fn load_in_text(&mut self, text: Message) {
+		// new_text returns the previous index of the conversation in which the new text was
+		// sent. We can use it to determine how to shift self.last_selected
+		match text.message_type {
+			MessageType::Normal => {
+				let past = self.chats_view.new_text(&text);
 
-		if let Some(text) = text_opt {
-			// new_text returns the previous index of the conversation in which the new text was
-			// sent. We can use it to determine how to shift self.last_selected
-			let past = self.chats_view.new_text(&text);
-
-			if let Some(idx) = past {
-				if let Some(ls) = self.last_selected {
-					if idx == ls {
-						self.last_selected = Some(0);
-						self.messages_view.new_text(text);
-					} else if idx > ls {
-						self.last_selected = Some(ls + 1);
+				if let Some(idx) = past {
+					if let Some(ls) = self.last_selected {
+						if idx == ls {
+							self.last_selected = Some(0);
+							self.messages_view.new_text(text);
+						} else if idx > ls {
+							self.last_selected = Some(ls + 1);
+						}
 					}
 				}
-			}
-		}
-
-		if let Ok(mut state) = STATE.write() {
-			state.new_text = None;
+			},
+			MessageType::Typing | MessageType::Idle => {
+				if let Some(ref id) = text.chat_identifier {
+					if let Some(ls) = self.last_selected {
+						if id == self.chats_view.chats[ls].chat_identifier.as_str() {
+							if let MessageType::Idle = text.message_type {
+								self.messages_view.set_idle();
+							} else {
+								self.messages_view.set_typing(text);
+							}
+						}
+					}
+				}
+			},
 		}
 	}
 

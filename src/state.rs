@@ -1,5 +1,7 @@
+use crate::models::*;
+
 pub struct GlobalState {
-	pub new_text: Option<serde_json::Map<String, serde_json::Value>>,
+	pub new_text: Option<Message>,
 	pub current_chat: Option<String>,
 	pub hint_msg: String,
 }

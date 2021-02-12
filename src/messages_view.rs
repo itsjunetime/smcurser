@@ -16,7 +16,8 @@ pub struct MessagesView {
 	pub attachments: Vec<String>,
 	pub last_width: u16,
 	pub last_height: u16,
-	pub y_bounds: (u16, u16) // .0 is top, .1 is bottom
+	pub y_bounds: (u16, u16), // .0 is top, .1 is bottom
+	pub typing_idx: Option<usize>,
 }
 
 impl MessagesView {
@@ -29,6 +30,7 @@ impl MessagesView {
 			last_width: 0,
 			last_height: 0,
 			y_bounds: (0, 0),
+			typing_idx: None,
 		}
 	}
 
@@ -60,6 +62,8 @@ impl MessagesView {
 									colorscheme.their_underline
 								}
 							),
+						MessageLineType::Typing =>
+							Style::default().fg(colorscheme.text_color).add_modifier(Modifier::ITALIC),
 					};
 
 					Spans::from(vec![Span::styled(l.text.as_str(), style)])
@@ -169,7 +173,6 @@ impl MessagesView {
 								max = att_line.len();
 							}
 
-							//vec.push(att_line);
 							vec.push(MessageLine::new(att_line, MessageLineType::Text, i, msg.is_from_me));
 							att_temp.push(att.path.as_str().to_string());
 						}
@@ -360,14 +363,38 @@ impl MessagesView {
 		self.scroll(false, 0);
 	}
 
-	#[allow(unused_must_use)]
+	pub fn set_typing(&mut self, text: Message) {
+		if let None = self.typing_idx {
+			let model = MessageLine::new("Typing...".to_owned(), MessageLineType::Typing, self.messages.len(), false);
+			self.line_list.push(model);
+			self.typing_idx = Some(self.line_list.len() - 1);
+
+			self.messages.push(text);
+		}
+	}
+
+	pub fn set_idle(&mut self) {
+		if let Some(id) = self.typing_idx {
+			let line = &self.line_list[id];
+
+			self.messages.remove(line.relative_index);
+			self.line_list.remove(id);
+		}
+	}
+
 	pub fn open_attachment(&self, idx: usize) {
 		if let Ok(set) = SETTINGS.read() {
-			open::that(
+
+			if let Err(err) = open::that(
 				set.attachment_string(
 					self.attachments[idx].as_str().to_string()
-				)
-			);
+				)) {
+
+				if let Ok(mut state) = STATE.write() {
+					state.hint_msg = format!("Unable to open link for attachment: {}", err);
+				}
+
+			}
 		}
 	}
 }

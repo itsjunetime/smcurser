@@ -51,6 +51,7 @@ pub struct Message {
 	pub associated_message_type: i16,
 	pub sender: Option<String>,
 	pub chat_identifier: Option<String>,
+	pub message_type: MessageType,
 }
 
 impl Message {
@@ -60,12 +61,13 @@ impl Message {
 			date: val["date"].as_i64().unwrap(),
 			balloon_bundle_id: val["balloon_bundle_id"].as_str().unwrap().to_owned(),
 			cache_has_attachments: val["cache_has_attachments"].as_bool().unwrap(),
-			imsg: val["service"].as_str().unwrap() == String::from("iMessage"),
+			imsg: val["service"].as_str().unwrap() == "iMessage",
 			is_from_me: val["is_from_me"].as_bool().unwrap(),
 			subject: val["subject"].as_str().unwrap().to_owned(),
 			text: val["text"].as_str().unwrap().to_owned(),
 			associated_message_guid: val["associated_message_guid"].as_str().unwrap().to_owned(),
 			associated_message_type: val["associated_message_type"].as_i64().unwrap() as i16,
+			message_type: MessageType::Normal,
 			attachments: if val.contains_key("attachments") {
 				val["attachments"].as_array()
 					.unwrap()
@@ -92,6 +94,46 @@ impl Message {
 			},
 		}
 	}
+
+	pub fn typing(chat: &str) -> Message {
+		Message {
+			guid: "".to_owned(),
+			date: 0,
+			balloon_bundle_id: "".to_owned(),
+			cache_has_attachments: false,
+			imsg: true,
+			is_from_me: false,
+			subject: "".to_owned(),
+			text: "".to_owned(),
+			associated_message_guid: "".to_owned(),
+			associated_message_type: 0,
+			message_type: MessageType::Typing,
+			chat_identifier: Some(chat.to_owned()),
+			attachments: Vec::new(),
+			date_read: 0,
+			sender: None,
+		}
+	}
+
+	pub fn idle(chat: &str) -> Message {
+		Message {
+			guid: "".to_owned(),
+			date: 0,
+			balloon_bundle_id: "".to_owned(),
+			cache_has_attachments: false,
+			imsg: true,
+			is_from_me: false,
+			subject: "".to_owned(),
+			text: "".to_owned(),
+			associated_message_guid: "".to_owned(),
+			associated_message_type: 0,
+			message_type: MessageType::Idle,
+			chat_identifier: Some(chat.to_owned()),
+			attachments: Vec::new(),
+			date_read: 0,
+			sender: None,
+		}
+	}
 }
 
 impl fmt::Debug for Message {
@@ -111,6 +153,12 @@ impl fmt::Debug for Message {
 			.field("sender", &self.sender)
 			.finish()
 	}
+}
+
+pub enum MessageType {
+	Normal,
+	Typing,
+	Idle,
 }
 
 pub struct Attachment {
@@ -159,5 +207,6 @@ pub enum MessageLineType {
 	TimeDisplay,
 	Text,
 	Sender,
-	Underline
+	Underline,
+	Typing,
 }

@@ -175,14 +175,12 @@ impl ChatsView {
 			}
 		}
 
-		// this doesn't account for the possibility of somebody sending you a text who hasn't
-		// texted you recently. I need to fix that up.
+		// TODO: this doesn't account for the possibility of somebody sending you a text
+		// who hasn't texted you recently. I need to fix that up.
 		ret
 	}
 
 	pub fn reload_chats(&mut self)  {
 		self.chats = APICLIENT.read().unwrap().get_chats(None, None);
-
-		print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
 	}
 }

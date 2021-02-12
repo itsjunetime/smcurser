@@ -39,6 +39,28 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				text_color: Color::Rgb(224, 222, 244),
 				hints_box: Color::Rgb(112, 110, 134),
 			},
+			"hacker" => Colorscheme {
+				selected_box: Color::Rgb(32, 160, 14),
+				unselected_box: Color::Rgb(120, 120, 120),
+				my_underline: Color::Rgb(32, 160, 14),
+				their_underline: Color::Rgb(120, 120, 120),
+				selected_underline: Color::White,
+				chat_indicator: Color::Rgb(32, 160, 14),
+				unread_indicator: Color::Rgb(32, 160, 14),
+				text_color: Color::Rgb(236, 236, 236),
+				hints_box: Color::Rgb(32, 160, 14),
+			},
+			"dracula" => Colorscheme {
+				selected_box: Color::Rgb(139, 233, 253),
+				unselected_box: Color::Rgb(98, 114, 164),
+				my_underline: Color::Rgb(189, 147, 249),
+				their_underline: Color::Rgb(68, 71, 90),
+				selected_underline: Color::Rgb(80, 250, 123),
+				chat_indicator: Color::Rgb(255, 121, 198),
+				unread_indicator: Color::Rgb(255, 184, 108),
+				text_color: Color::Rgb(248, 248, 242),
+				hints_box: Color::Rgb(80, 250, 123),
+			},
 			_ => Colorscheme::from("forest"),
 		}
 	}

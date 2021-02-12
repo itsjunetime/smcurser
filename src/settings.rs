@@ -1,5 +1,4 @@
 use crate::*;
-use crate::colorscheme::*;
 use chrono::prelude::*;
 use serde::Deserialize;
 
@@ -168,19 +167,21 @@ impl Settings {
 	}
 
 	pub fn parse_args(&mut self, mut args: Vec<String>, tui_mode: bool) {
-		let pos = args.iter().position(|a| a.as_str() == "--config");
+		if !tui_mode {
+			let pos = args.iter().position(|a| a.as_str() == "--config");
 
-		if let Some(p) = pos {
-			if p + 1 < args.len() {
-				let _ = args.drain(p..p+1).nth(0);
-				let new_conf = args.drain(p..p+1).nth(0);
-				if let Some(conf) = new_conf {
-					self.config_file = conf;
+			if let Some(p) = pos {
+				if p + 1 < args.len() {
+					let _ = args.drain(p..p+1).nth(0);
+					let new_conf = args.drain(p..p+1).nth(0);
+					if let Some(conf) = new_conf {
+						self.config_file = conf;
+					}
 				}
 			}
-		}
 
-		self.parse_config_file();
+			self.parse_config_file();
+		}
 
 		let mut it = args.iter();
 
@@ -292,8 +293,6 @@ impl Settings {
 					false
 				);
 			}
-		} else {
-			Settings::print_msg(format!("No config file exists at {}. Ignoring...", self.config_file), false);
 		}
 	}
 
