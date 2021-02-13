@@ -21,3 +21,4 @@ tungstenite = { version = "0.12.0", features = ["tls"] }
 url = "2.2.0"
 open = "1.4.0"
 toml = "0.5.8"
+dirs = "3.0.1"

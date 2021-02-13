@@ -32,13 +32,16 @@ pub struct Settings {
 
 impl Settings {
 	pub fn default() -> Settings {
-		let home = match std::env::var("HOME") {
-			Ok(var) => var,
-			Err(_) => std::env::var("XDG_HOME")
-				.expect("Please set either the HOME or XDG_HOME environment variable"),
-		};
+		let config_file = {
+            let mut config_dir = dirs::config_dir()
+                .expect("Cannot detect your system's configuration directory. Please file an issue with the maintainer");
 
-		let config_file = format!("{}/.config/smserver/smserver.toml", home);
+            config_dir.push("smserver");
+            config_dir.push("smserver");
+            config_dir.set_extension("toml");
+
+            config_dir.into_os_string().into_string().unwrap()
+        };
 
 		Settings {
 			host: "".to_owned(),
