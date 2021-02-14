@@ -4,6 +4,7 @@ A tui client for [SMServer](https://github.com/ianwelker/smserver), written in R
 
 ## New Features
 - Typing indicators
+- Ability to send tapbacks per-text
 - Way faster, with much lower CPU & memory usage
 - Optional configuration file for persistent customization
 - Support for resizing the terminal without everything getting messed up

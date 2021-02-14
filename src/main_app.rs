@@ -51,13 +51,13 @@ impl MainApp {
 
 		if let Ok(set) = SETTINGS.read() {
 			if set.host.len() == 0 {
-				eprintln!("You didn't specify a host to connect to. Please either edit your config file to include a host or pass one in after the \x1b[1m--host\x1b[0m flag");
+				eprintln!("You didn't specify a host to connect to. Please either edit your config file ({}) to include a host or pass one in after the \x1b[1m--host\x1b[0m flag", set.config_file);
 				return Err(Error::new(ErrorKind::Other, "No specified host"));
 			}
 		}
 
 		// just to make sure
-		let good = APICLIENT.read().unwrap().check_auth();
+		let good = APICLIENT.check_auth();
 
 		if !good {
 			eprintln!("Failed to authenticate. Check your password and/or hostname");
@@ -449,6 +449,10 @@ impl MainApp {
 				}
 			},
 			":f" | ":F" => self.send_attachments(splits),
+			":t" | ":T" => {
+				let tapback = splits.join("");
+				self.send_tapback(&tapback);
+			},
 			x => {
 				if let Ok(mut state) = STATE.write() {
 					state.hint_msg = format!("Command {} not recognized", x);
@@ -545,8 +549,7 @@ impl MainApp {
 				.chat_identifier
 				.to_string();
 
-			let sent = APICLIENT.read().unwrap()
-				.send_text(text, None, id, Some(in_files), None);
+			let sent = APICLIENT.send_text(text, None, id, Some(in_files), None);
 
 			if let Ok(mut state) = STATE.write() {
 				state.hint_msg = (if sent {
@@ -722,6 +725,32 @@ impl MainApp {
 					}
 				}
 			},
+		}
+	}
+
+	pub fn send_tapback(&self, tap: &str) {
+		let msgs = ["love", "like", "dislike", "laugh", "emphasize", "question"];
+		let guid = &self.messages_view.messages[self.messages_view.selected_msg as usize].guid;
+
+		if let Some(idx) = msgs.iter().position(|c| *c == tap) {
+			if let Some(ls) = self.chats_view.last_selected {
+
+				let chat = &self.chats_view.chats[ls].chat_identifier;
+
+				let tap_url = SETTINGS.read().unwrap()
+					.tapback_send_string(idx as i8, &guid, &chat, None);
+
+				match APICLIENT.get_url_string(&tap_url) {
+					Err(err) => if let Ok(mut state) = STATE.write() {
+						state.hint_msg = format!("Could not send tapback: {}", err);
+					},
+					Ok(_) => if let Ok(mut state) = STATE.write() {
+						state.hint_msg = "Sent tapback :)".to_owned();
+					}
+				}
+			}
+		} else if let Ok(mut state) = STATE.write() {
+			state.hint_msg = format!("Did not recognize tapback option {}; possible options are: {}", tap, msgs.join(", "));
 		}
 	}
 }

@@ -128,7 +128,7 @@ impl Settings {
 	}
 
 	pub fn tapback_send_string(
-		&self, tapback: i8, tap_guid: String, tap_in_chat: String, remove_tap: Option<bool>
+		&self, tapback: i8, tap_guid: &str, tap_in_chat: &str, remove_tap: Option<bool>
 	) -> String {
 		let rs = match remove_tap {
 			Some(val) => format!("&remove_tap={}", val),

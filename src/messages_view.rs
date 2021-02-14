@@ -237,7 +237,7 @@ impl MessagesView {
 	}
 
 	pub fn load_in_conversation(&mut self, id: &String) {
-		self.messages = APICLIENT.read().unwrap().get_texts(id.as_str().to_string(), None, None, None, None);
+		self.messages = APICLIENT.get_texts(id.as_str().to_string(), None, None, None, None);
 		self.messages.reverse(); // cause ya gotta
 
 		self.last_width = 0;
@@ -249,9 +249,13 @@ impl MessagesView {
 
 		let new_msgs_opt = if let Ok(state) = STATE.read() {
 			if let Some(chat) = &state.current_chat {
-				Some(APICLIENT.read()
-					.unwrap()
-					.get_texts(chat.as_str().to_string(), None, Some(self.messages.len() as i64), None, None))
+				Some(APICLIENT.get_texts(
+						chat.as_str().to_string(),
+						None,
+						Some(self.messages.len() as i64),
+						None,
+						None
+				))
 			} else { None }
 		} else { None };
 

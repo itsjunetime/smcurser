@@ -18,7 +18,7 @@ use std::io;
 
 lazy_static! {
 	static ref SETTINGS: Arc<RwLock<Settings>> = Arc::new(RwLock::new(Settings::default()));
-	static ref APICLIENT: Arc<RwLock<APIClient>> = Arc::new(RwLock::new(APIClient::new()));
+	static ref APICLIENT: APIClient = APIClient::new();
 	static ref STATE: Arc<RwLock<GlobalState>> = Arc::new(RwLock::new(GlobalState::new()));
 }
 

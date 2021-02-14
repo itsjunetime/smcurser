@@ -19,7 +19,7 @@ pub struct ChatsView {
 
 impl ChatsView {
 	pub fn new() -> ChatsView {
-		let chats = APICLIENT.read().unwrap().get_chats(None, None);
+		let chats = APICLIENT.get_chats(None, None);
 
 		ChatsView {
 			scroll: 0,
@@ -124,8 +124,7 @@ impl ChatsView {
 			self.scroll = std::cmp::min(self.scroll + distance, max);
 
 			if self.scroll == max {
-				let mut new_chats = APICLIENT.read()
-					.unwrap().get_chats(None, Some(self.chats.len() as i64));
+				let mut new_chats = APICLIENT.get_chats(None, Some(self.chats.len() as i64));
 
 				self.chats.append(&mut new_chats);
 				self.last_height = 0;
@@ -181,6 +180,6 @@ impl ChatsView {
 	}
 
 	pub fn reload_chats(&mut self)  {
-		self.chats = APICLIENT.read().unwrap().get_chats(None, None);
+		self.chats = APICLIENT.get_chats(None, None);
 	}
 }
