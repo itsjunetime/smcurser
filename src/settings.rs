@@ -33,15 +33,15 @@ pub struct Settings {
 impl Settings {
 	pub fn default() -> Settings {
 		let config_file = {
-            let mut config_dir = dirs::config_dir()
-                .expect("Cannot detect your system's configuration directory. Please file an issue with the maintainer");
+			let mut config_dir = dirs::config_dir()
+				.expect("Cannot detect your system's configuration directory. Please file an issue with the maintainer");
 
-            config_dir.push("smserver");
-            config_dir.push("smserver");
-            config_dir.set_extension("toml");
+			config_dir.push("smserver");
+			config_dir.push("smserver");
+			config_dir.set_extension("toml");
 
-            config_dir.into_os_string().into_string().unwrap()
-        };
+			config_dir.into_os_string().into_string().unwrap()
+		};
 
 		Settings {
 			host: "".to_owned(),

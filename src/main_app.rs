@@ -641,12 +641,18 @@ impl MainApp {
 			return;
 		}
 
+		let dir_char = if cfg!(windows) {
+			"\\"
+		} else {
+			"/"
+		};
+
 		// get the path for the attachment that hasn't fully been input yet
 		let incomplete = incomplete_opt.last().unwrap();
 
 		// separate it by "/", join all but last since that is probably
 		// the file that hasn't fully been input yet
-		let mut top_dirs = incomplete.split("/").collect::<Vec<&str>>();
+		let mut top_dirs = incomplete.split(dir_char).collect::<Vec<&str>>();
 		let first_file = top_dirs.drain(top_dirs.len() - 1..top_dirs.len())
 			.collect::<Vec<&str>>()
 			.join("");
@@ -678,12 +684,12 @@ impl MainApp {
 		// Set file to the whole untyped file name, including the possibly escaped sections
 		let file = format!("{}{}{}",
 			poss_files,
-			if to_drop > 0 { "/" } else { "" },
+			if to_drop > 0 { dir_char } else { "" },
 			first_file
 		);
 
 		// dir = the whole parent directory for the file they were entering
-		let dir = top_dirs.join("/");
+		let dir = top_dirs.join(dir_char);
 		let dir_contents = std::fs::read_dir(&dir);
 
 		match dir_contents {
@@ -702,7 +708,7 @@ impl MainApp {
 							format!(".{}", ex.to_str().unwrap())
 						} else { "".to_owned() },
 						if path.is_dir() {
-							"/"
+							dir_char
 						} else { "" }
 					);
 
@@ -717,7 +723,7 @@ impl MainApp {
 					// If it's a possibility for the file they were trying to input, auto-fill the
 					// input string with the whole file path
 					if path_str[..file.len()] == file {
-						let full_path = format!("{}/{}", dir, path_str);
+						let full_path = format!("{}{}{}", dir, dir_char, path_str);
 
 						self.input_str.truncate(self.input_str.len() - incomplete.len());
 						self.input_str = format!("{}{}", self.input_str, full_path);
