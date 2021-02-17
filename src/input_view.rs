@@ -9,12 +9,15 @@ use tui::{
 	style::Style,
 	terminal::Frame,
 };
+use std::vec::Vec;
 
 pub struct InputView {
 	pub input: String,
 	pub bounds: (u16, u16),
 	pub right_offset: u16,
 	pub last_width: u16,
+	pub last_commands: Vec<String>,
+	pub tabbed_up: Option<u16>,
 }
 
 impl InputView {
@@ -24,6 +27,8 @@ impl InputView {
 			bounds: (0, 0),
 			right_offset: 0,
 			last_width: 0,
+			last_commands: Vec::new(),
+			tabbed_up: None,
 		}
 	}
 
@@ -60,15 +65,23 @@ impl InputView {
 			);
 		frame.render_widget(input_widget, rect);
 
-		frame.set_cursor(self.input.len() as u16 + 1 - self.right_offset as u16, frame.size().height - 3);
+		let cursor_x = std::cmp::min(
+			self.last_width - 2,
+			self.input.len() as u16 - self.right_offset - self.bounds.0 + 1
+		);
 
-		self.last_width = frame.size().width;
+		frame.set_cursor(cursor_x, frame.size().height - 3);
 	}
 
 	pub fn append_char(&mut self, ch: char) {
 		self.input.insert(self.input.len() - self.right_offset as usize, ch);
 
 		self.scroll(true, 0);
+	}
+
+	pub fn handle_escape(&mut self) {
+		self.input = "".to_owned();
+		self.scroll(false, 0);
 	}
 
 	pub fn handle_backspace(&mut self) {
@@ -246,14 +259,45 @@ impl InputView {
 			self.right_offset = std::cmp::min(self.input.len() as u16, self.right_offset + distance);
 		}
 
-		if self.input.len() as u16 - self.right_offset >= self.last_width - 2 {
-			self.bounds.1 = self.input.len() as u16 - self.right_offset - 1;
+		// ugh. complex logic. Just suffice it to say this handles setting all these parameters to
+		// the correct values for the input field to be pretty
+		if self.input.len() as u16 - self.right_offset >= self.last_width - 2 
+			&& self.bounds.1 == self.input.len() as u16 - self.right_offset - 1 {
+
+			self.bounds.1 = self.input.len() as u16 - self.right_offset;
 			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - (self.last_width as i32 - 3), 0) as u16;
+
 		} else if self.input.len() as u16 - self.right_offset <= self.bounds.0 {
+
 			self.bounds.0 = self.input.len() as u16 - self.right_offset;
-			self.bounds.1 = self.bounds.0 + self.last_width - 2;
-		} else {
+			self.bounds.1 = std::cmp::min(self.bounds.0 + self.last_width - 3, self.input.len() as u16);
+
+		} else if self.last_width - 2 > self.input.len() as u16 {
 			self.bounds.1 = self.input.len() as u16;
+		}
+	}
+
+	pub fn change_command(&mut self, up: bool) {
+		if up {
+			if self.last_commands.len() > 0 && self.tabbed_up.is_none() {
+				self.tabbed_up = Some(0);
+				self.input = self.last_commands[0].as_str().to_owned();
+			} else if self.last_commands.len() as u16 > self.tabbed_up.unwrap() + 1 {
+				self.tabbed_up = Some(self.tabbed_up.unwrap() + 1);
+				self.input = self.last_commands[self.tabbed_up.unwrap() as usize]
+					.as_str().to_owned();
+			}
+		} else {
+			if let Some(tab) = self.tabbed_up {
+				if tab == 0 {
+					self.input = "".to_owned();
+					self.tabbed_up = None;
+				} else {
+					self.input = self.last_commands[tab as usize - 1]
+						.as_str().to_owned();
+					self.tabbed_up = Some(tab - 1);
+				}
+			}
 		}
 	}
 }

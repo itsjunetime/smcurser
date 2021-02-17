@@ -22,8 +22,6 @@ use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 
 pub struct MainApp {
 	last_selected: Option<usize>,
-	last_commands: Vec<String>,
-	tabbed_up: Option<u16>,
 	selected_box: DisplayBox,
 	quit_app: bool,
 	redraw_all: bool,
@@ -36,8 +34,6 @@ impl MainApp {
 	pub fn new() -> MainApp {
 		MainApp {
 			last_selected: None,
-			last_commands: Vec::new(),
-			tabbed_up: None,
 			selected_box: DisplayBox::Chats,
 			quit_app: false,
 			redraw_all: false,
@@ -227,9 +223,7 @@ impl MainApp {
 					let chats_selected = if let DisplayBox::Chats = self.selected_box { true } else { false };
 
 					self.chats_view.draw_view(f, content_layout[0], chats_selected);
-
 					self.messages_view.draw_view(f, content_layout[1], !chats_selected);
-
 					self.input_view.draw_view(f, main_layout[1]);
 
 					// create a span for the help box add the help string
@@ -295,33 +289,13 @@ impl MainApp {
 							KeyCode::Tab => self.input_view.handle_tab(),
 							// easy way to cancel what you're typing
 							KeyCode::Esc => {
-								self.input_view.input = "".to_string();
+								self.input_view.handle_escape();
 								if let Ok(mut state) = STATE.write() {
 									state.hint_msg = "Command cancelled".to_string();
 								}
 							},
-							KeyCode::Up => {
-								if self.last_commands.len() > 0 && self.tabbed_up.is_none() {
-									self.tabbed_up = Some(0);
-									self.input_view.input = self.last_commands[0].as_str().to_owned();
-								} else if self.last_commands.len() as u16 > self.tabbed_up.unwrap() + 1 {
-									self.tabbed_up = Some(self.tabbed_up.unwrap() + 1);
-									self.input_view.input = self.last_commands[self.tabbed_up.unwrap() as usize]
-										.as_str().to_owned();
-								}
-							},
-							KeyCode::Down => {
-								if let Some(tab) = self.tabbed_up {
-									if tab == 0 {
-										self.input_view.input = "".to_owned();
-										self.tabbed_up = None;
-									} else {
-										self.input_view.input = self.last_commands[tab as usize - 1]
-											.as_str().to_owned();
-										self.tabbed_up = Some(tab - 1);
-									}
-								}
-							}
+							KeyCode::Up | KeyCode::Down =>
+								self.input_view.change_command(event.code == KeyCode::Up),
 							// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
 							// for people to invoke it to exit if that's what they're used to.
 							KeyCode::Char(c) => {
@@ -358,7 +332,6 @@ impl MainApp {
 
 	fn handle_input_char(&mut self, ch: char, distance: u16) {
 		if self.input_view.input.len() > 0 || ch == ':' {
-			//self.input_str.insert(self.input_str.len() - self.right_offset as usize, ch);
 			self.input_view.append_char(ch);
 		} else {
 			match ch {
@@ -376,7 +349,8 @@ impl MainApp {
 	}
 
 	fn handle_full_input(&mut self) {
-		self.last_commands.insert(0, self.input_view.input.as_str().to_owned());
+		self.input_view.last_commands
+			.insert(0, self.input_view.input.as_str().to_owned());
 
 		let mut splits = self.input_view.input.split(' ').collect::<Vec<&str>>();
 		let cmd = splits.drain(0..1).as_slice()[0];
