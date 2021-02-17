@@ -1,7 +1,11 @@
 use models::*;
-use crate::*;
-use crate::chats_view::*;
-use crate::messages_view::*;
+use crate::{
+	*,
+	chats_view::*,
+	messages_view::*,
+	input_view::*,
+	colorscheme::*,
+};
 use std::{
 	vec::Vec,
 	io::{Stdout, Error, ErrorKind},
@@ -11,15 +15,12 @@ use core::time::Duration;
 use tui::{
 	layout::{Constraint, Direction, Layout},
 	text::{Span, Spans},
-	widgets::{Block, Borders, Paragraph, Wrap, BorderType},
+	widgets::{Block, Borders, Paragraph, Wrap},
 	style::Style,
 };
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 
 pub struct MainApp {
-	input_str: String,
-	right_offset: i32, // cursor offset from the right side of the input string
-	input_left_start: i32, // what index of the input string appears at the start of the input box
 	last_selected: Option<usize>,
 	last_commands: Vec<String>,
 	tabbed_up: Option<u16>,
@@ -28,14 +29,12 @@ pub struct MainApp {
 	redraw_all: bool,
 	chats_view: ChatsView,
 	messages_view: MessagesView,
+	input_view: InputView,
 }
 
 impl MainApp {
 	pub fn new() -> MainApp {
 		MainApp {
-			input_str: String::from(""),
-			right_offset: 0,
-			input_left_start: 0,
 			last_selected: None,
 			last_commands: Vec::new(),
 			tabbed_up: None,
@@ -44,6 +43,7 @@ impl MainApp {
 			redraw_all: false,
 			chats_view: ChatsView::new(),
 			messages_view: MessagesView::new(),
+			input_view: InputView::new(),
 		}
 	}
 
@@ -182,78 +182,69 @@ impl MainApp {
 
 	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
 		// gotta make sure we can actually access the settings
-		if let Ok(set) = SETTINGS.read() {
-			let colorscheme = colorscheme::Colorscheme::from(&set.colorscheme);
+		let (help_title, colorscheme) = if let Ok(set) = SETTINGS.read() {
+			(set.help_title.to_owned(), Colorscheme::from(&set.colorscheme))
+		} else {
+			("| help |".to_owned(), Colorscheme::from("forest"))
+		};
 
-			// this just draws the actual tui display.
-			term.draw(|f| {
-				let size = f.size();
+		// this just draws the actual tui display.
+		term.draw(|f| {
+			let size = f.size();
 
-				match self.selected_box {
-					DisplayBox::Help => {
-						// if we're showing the help box, just draw the help box and nothing else
-						let text: Vec<Spans> = HELP_MSG.iter().map(|m| Spans::from(vec![Span::raw(*m)])).collect();
-						let help_msg_widget = Paragraph::new(text)
-							.block(Block::default().title(set.help_title.as_str()).borders(Borders::ALL))
-							.wrap(Wrap { trim: true });
+			match self.selected_box {
+				DisplayBox::Help => {
+					// if we're showing the help box, just draw the help box and nothing else
+					let text: Vec<Spans> = HELP_MSG.iter().map(|m| Spans::from(vec![Span::raw(*m)])).collect();
+					let help_msg_widget = Paragraph::new(text)
+						.block(Block::default().title(help_title).borders(Borders::ALL))
+						.wrap(Wrap { trim: true });
 
-						f.render_widget(help_msg_widget, size);
-					},
-					DisplayBox::Chats | DisplayBox::Messages | DisplayBox::Compose => {
-						// set up layouts
-						let main_layout = Layout::default()
-							.direction(Direction::Vertical)
-							.constraints(
-								[
-									Constraint::Min(5),
-									Constraint::Length(3),
-									Constraint::Length(1),
-								].as_ref()
-							).split(size);
+					f.render_widget(help_msg_widget, size);
+				},
+				DisplayBox::Chats | DisplayBox::Messages | DisplayBox::Compose => {
+					// set up layouts
+					let main_layout = Layout::default()
+						.direction(Direction::Vertical)
+						.constraints(
+							[
+								Constraint::Min(5),
+								Constraint::Length(3),
+								Constraint::Length(1),
+							].as_ref()
+						).split(size);
 
-						let content_layout = Layout::default()
-							.direction(Direction::Horizontal)
-							.constraints(
-								[
-									Constraint::Percentage(30),
-									Constraint::Percentage(70),
-								].as_ref()
-							)
-							.split(main_layout[0]);
+					let content_layout = Layout::default()
+						.direction(Direction::Horizontal)
+						.constraints(
+							[
+								Constraint::Percentage(30),
+								Constraint::Percentage(70),
+							].as_ref()
+						)
+						.split(main_layout[0]);
 
-						let chats_selected = if let DisplayBox::Chats = self.selected_box { true } else { false };
+					let chats_selected = if let DisplayBox::Chats = self.selected_box { true } else { false };
 
-						self.chats_view.draw_view(f, content_layout[0], chats_selected);
+					self.chats_view.draw_view(f, content_layout[0], chats_selected);
 
-						self.messages_view.draw_view(f, content_layout[1], !chats_selected);
+					self.messages_view.draw_view(f, content_layout[1], !chats_selected);
 
-						// create a span for the input box and add the border
-						let input_span = vec![Spans::from(vec![Span::raw(self.input_str.as_str())])];
-						let input_widget = Paragraph::new(input_span)
-							.block(
-								Block::default()
-									.title(set.input_title.as_str())
-									.borders(Borders::ALL)
-									.border_type(BorderType::Rounded)
-									.border_style(Style::default().fg(colorscheme.unselected_box))
-							);
-						f.render_widget(input_widget, main_layout[1]);
+					self.input_view.draw_view(f, main_layout[1]);
 
-						f.set_cursor(self.input_str.len() as u16 + 1 - self.right_offset as u16, size.height - 3);
+					// create a span for the help box add the help string
+					let hint_msg = if let Ok(state) = STATE.read() {
+						state.hint_msg.as_str().to_string()
+					} else {
+						"type :h to get help :)".to_string()
+					};
 
-						// create a span for the help box add the help string
-						let hint_msg = if let Ok(state) = STATE.read() {
-							state.hint_msg.as_str().to_string()
-						} else {
-							"type :h to get help :)".to_string()
-						};
-						let help_span = vec![Spans::from(vec![Span::styled(hint_msg, Style::default().fg(colorscheme.hints_box))])];
-						let help_widget = Paragraph::new(help_span);
-						f.render_widget(help_widget, main_layout[2]);
-					}
+					let help_span = vec![Spans::from(vec![Span::styled(hint_msg, Style::default().fg(colorscheme.hints_box))])];
+					let help_widget = Paragraph::new(help_span);
+					f.render_widget(help_widget, main_layout[2]);
 				}
-			})?;
-		}
+			}
+		})?;
 
 		Ok(())
 	}
@@ -287,39 +278,24 @@ impl MainApp {
 				match read()? {
 					Event::Key(event) => {
 						match event.code {
-							KeyCode::Backspace => {
-								if self.input_str.len() > 0 {
-									let index = self.input_str.len() as i32 - self.right_offset - 1;
-									if index > -1 { self.input_str.remove(index as usize); }
-								}
-							},
-							KeyCode::Enter => if self.input_str.len() > 0 { self.handle_full_input() },
+							KeyCode::Backspace => self.input_view.handle_backspace(),
+							KeyCode::Enter => if self.input_view.input.len() > 0 { self.handle_full_input() },
 							// left and right move the cursor if there's input in the box, else they
 							// just switch which box is selected
 							KeyCode::Left | KeyCode::Right => {
-								if self.input_str.len() > 0 {
-									if let KeyCode::Left = event.code {
-										self.right_offset = std::cmp::min(self.input_str.len() as i32, self.right_offset + 1);
-									} else {
-										self.right_offset = std::cmp::max(0, self.right_offset - 1);
-									}
+								if self.input_view.input.len() > 0 {
+									let right = if let KeyCode::Right = event.code { true } else { false };
+									let dist: u16 = distance.parse().unwrap_or(1);
+									self.input_view.scroll(right, dist);
 								} else {
 									self.switch_selected_box();
 								}
 							},
 							// will add tab completion for file selection later
-							KeyCode::Tab => if self.input_str.len() > 0 &&
-								&self.input_str[..3] != ":f " &&
-								&self.input_str[..3] != ":F " {
-
-								self.input_str.push_str("	");
-
-							} else {
-								self.handle_tab_completion();
-							},
+							KeyCode::Tab => self.input_view.handle_tab(),
 							// easy way to cancel what you're typing
 							KeyCode::Esc => {
-								self.input_str = "".to_string();
+								self.input_view.input = "".to_string();
 								if let Ok(mut state) = STATE.write() {
 									state.hint_msg = "Command cancelled".to_string();
 								}
@@ -327,20 +303,20 @@ impl MainApp {
 							KeyCode::Up => {
 								if self.last_commands.len() > 0 && self.tabbed_up.is_none() {
 									self.tabbed_up = Some(0);
-									self.input_str = self.last_commands[0].as_str().to_owned();
+									self.input_view.input = self.last_commands[0].as_str().to_owned();
 								} else if self.last_commands.len() as u16 > self.tabbed_up.unwrap() + 1 {
 									self.tabbed_up = Some(self.tabbed_up.unwrap() + 1);
-									self.input_str = self.last_commands[self.tabbed_up.unwrap() as usize]
+									self.input_view.input = self.last_commands[self.tabbed_up.unwrap() as usize]
 										.as_str().to_owned();
 								}
 							},
 							KeyCode::Down => {
 								if let Some(tab) = self.tabbed_up {
 									if tab == 0 {
-										self.input_str = "".to_owned();
+										self.input_view.input = "".to_owned();
 										self.tabbed_up = None;
 									} else {
-										self.input_str = self.last_commands[tab as usize - 1]
+										self.input_view.input = self.last_commands[tab as usize - 1]
 											.as_str().to_owned();
 										self.tabbed_up = Some(tab - 1);
 									}
@@ -351,7 +327,7 @@ impl MainApp {
 							KeyCode::Char(c) => {
 								if event.modifiers == KeyModifiers::CONTROL && c == 'c' {
 									self.quit_app = true;
-								} else if c.is_digit(10) && self.input_str.len() == 0 {
+								} else if c.is_digit(10) && self.input_view.input.len() == 0 {
 
 									// test for digits to allow for vim-like scrolling, multiple lines
 									// at once.
@@ -381,8 +357,9 @@ impl MainApp {
 	}
 
 	fn handle_input_char(&mut self, ch: char, distance: u16) {
-		if self.input_str.len() > 0 || ch == ':' {
-			self.input_str.insert(self.input_str.len() - self.right_offset as usize, ch);
+		if self.input_view.input.len() > 0 || ch == ':' {
+			//self.input_str.insert(self.input_str.len() - self.right_offset as usize, ch);
+			self.input_view.append_char(ch);
 		} else {
 			match ch {
 				'h' | 'l' => self.switch_selected_box(),
@@ -399,9 +376,9 @@ impl MainApp {
 	}
 
 	fn handle_full_input(&mut self) {
-		self.last_commands.insert(0, self.input_str.as_str().to_owned());
+		self.last_commands.insert(0, self.input_view.input.as_str().to_owned());
 
-		let mut splits = self.input_str.split(' ').collect::<Vec<&str>>();
+		let mut splits = self.input_view.input.split(' ').collect::<Vec<&str>>();
 		let cmd = splits.drain(0..1).as_slice()[0];
 		match cmd {
 			":q" | ":Q" => self.quit_app = true,
@@ -460,8 +437,7 @@ impl MainApp {
 			}
 		};
 
-		self.input_str = "".to_string();
-		self.right_offset = 0;
+		self.input_view.input = "".to_string();
 	}
 
 	fn switch_selected_box(&mut self) {
@@ -564,46 +540,9 @@ impl MainApp {
 	fn send_attachments(&self, files: Vec<&str>) {
 		let orig = files.join(" ");
 
-		let files_to_send = self.get_typed_attachments(orig);
+		let files_to_send = self.input_view.get_typed_attachments(orig);
 
 		self.send_text(None, Some(files_to_send));
-	}
-
-	fn get_typed_attachments(&self, input: String) -> Vec<String> {
-		let bad_chars = [' ', '\t', '"', '\\'];
-
-		let mut files: Vec<String> = Vec::new();
-		let mut in_quotes = false;
-		let mut escaped = false;
-		let mut curr_string: String = "".to_owned();
-
-		for c in input.chars() {
-			if !bad_chars.contains(&c) || escaped || (in_quotes && c != '"') {
-				curr_string.push(c);
-				escaped = false;
-			} else {
-				if c == '\\' {
-					escaped = true;
-				} else if c == '"' {
-					if in_quotes {
-						files.push(curr_string);
-						curr_string = "".to_owned();
-					}
-					in_quotes = !in_quotes;
-				} else if c == ' ' || c == '\t' {
-					if curr_string.len() > 0 && !in_quotes {
-						files.push(curr_string);
-						curr_string = "".to_owned();
-					}
-				}
-			}
-		}
-
-		if curr_string.len() > 0 {
-			files.push(curr_string);
-		}
-
-		return files;
 	}
 
 	fn bind_var(&mut self, ops: Vec<String>) {
@@ -620,117 +559,6 @@ impl MainApp {
 
 		if let Ok(mut set) = SETTINGS.write() {
 			set.parse_args(new_ops, true);
-		}
-	}
-
-	fn handle_tab_completion(&mut self) {
-		// So this is my messy attempt at tab completion. It actually works ok-ish
-		// It doesn't work on Windows rn (I think) since it sees directory separators
-		// as '/' instead of '\'.
-
-		let mut splits = self.input_str.split(" ").collect::<Vec<&str>>();
-		splits.remove(0);
-		let input = splits.join(" ");
-
-		// this gets a list of the currently input attachments,
-		// with support for escaping spaces with backslashes and quotes
-		let incomplete_opt = self.get_typed_attachments(input);
-
-		// if there are no attachments input, just exit
-		if incomplete_opt.len() == 0 {
-			return;
-		}
-
-		let dir_char = if cfg!(windows) {
-			"\\"
-		} else {
-			"/"
-		};
-
-		// get the path for the attachment that hasn't fully been input yet
-		let incomplete = incomplete_opt.last().unwrap();
-
-		// separate it by "/", join all but last since that is probably
-		// the file that hasn't fully been input yet
-		let mut top_dirs = incomplete.split(dir_char).collect::<Vec<&str>>();
-		let first_file = top_dirs.drain(top_dirs.len() - 1..top_dirs.len())
-			.collect::<Vec<&str>>()
-			.join("");
-
-		// TODO: Add support for Windows with its weird \ instead of /
-
-		// Here we iterate over the parent directories and make sure they weren't
-		// escaping a "/" with a "\" in the file that wasn't fully input yet
-		let mut to_drop = 0;
-
-		for c in top_dirs.iter().rev() {
-			if c.len() > 0 && c.chars().last().unwrap() == '\\' {
-				to_drop += 1;
-			} else {
-				break;
-			}
-		}
-
-		// Set poss_files to the beginning of the file that they
-		// may have been trying to escape
-		let poss_files = if to_drop > 0 {
-			top_dirs.drain(top_dirs.len() - to_drop..top_dirs.len())
-				.collect::<Vec<&str>>()
-				.join("")
-		} else {
-			"".to_owned()
-		};
-
-		// Set file to the whole untyped file name, including the possibly escaped sections
-		let file = format!("{}{}{}",
-			poss_files,
-			if to_drop > 0 { dir_char } else { "" },
-			first_file
-		);
-
-		// dir = the whole parent directory for the file they were entering
-		let dir = top_dirs.join(dir_char);
-		let dir_contents = std::fs::read_dir(&dir);
-
-		match dir_contents {
-			Err(_) => return,
-			Ok(items) => {
-				for item in items {
-					let path = item.unwrap().path();
-
-					// tmp_path = the file or dir name (including dot
-					// between name and extension or trailing slash for directory
-					let tmp_path = format!("{}{}{}",
-						if let Some(fs) = path.file_stem() {
-							fs.to_str().unwrap()
-						} else { "" },
-						if let Some(ex) = path.extension() {
-							format!(".{}", ex.to_str().unwrap())
-						} else { "".to_owned() },
-						if path.is_dir() {
-							dir_char
-						} else { "" }
-					);
-
-					let path_str = tmp_path.as_str();
-
-					// if the file that is currently being iterated over is the same length or
-					// shorter than what they've input, don't even try to match it
-					if path_str.len() <= file.len() {
-						continue
-					}
-
-					// If it's a possibility for the file they were trying to input, auto-fill the
-					// input string with the whole file path
-					if path_str[..file.len()] == file {
-						let full_path = format!("{}{}{}", dir, dir_char, path_str);
-
-						self.input_str.truncate(self.input_str.len() - incomplete.len());
-						self.input_str = format!("{}{}", self.input_str, full_path);
-						break;
-					}
-				}
-			},
 		}
 	}
 
