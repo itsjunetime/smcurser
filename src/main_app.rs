@@ -47,17 +47,22 @@ impl MainApp {
 
 		if let Ok(set) = SETTINGS.read() {
 			if set.host.len() == 0 {
-				eprintln!("You didn't specify a host to connect to. Please either edit your config file ({}) to include a host or pass one in after the \x1b[1m--host\x1b[0m flag", set.config_file);
+				eprintln!("You didn't specify a host to connect to. Please either edit your config file ({}) to include a host \
+					or pass one in after the \x1b[1m--host\x1b[0m flag", set.config_file);
 				return Err(Error::new(ErrorKind::Other, "No specified host"));
 			}
 		}
 
-		// just to make sure
-		let good = APICLIENT.check_auth();
+		if !APICLIENT.check_auth() {
+			eprintln!("Failed to authenticate. Trying fallback host...");
+			if let Ok(mut set) = SETTINGS.write() {
+				set.host = set.fallback_host.to_owned();
+			}
 
-		if !good {
-			eprintln!("Failed to authenticate. Check your password and/or hostname");
-			return Err(Error::new(ErrorKind::Other, "Failed to authenticate"));
+			if !APICLIENT.check_auth() {
+				eprintln!("Failed to authenticate with both hosts. Please check your configuration.");
+				return Err(Error::new(ErrorKind::Other, "Failed to authenticate"));
+			}
 		}
 
 		self.setup_socket();
@@ -220,7 +225,7 @@ impl MainApp {
 						)
 						.split(main_layout[0]);
 
-					let chats_selected = if let DisplayBox::Chats = self.selected_box { true } else { false };
+					let chats_selected = self.selected_box == DisplayBox::Chats;
 
 					self.chats_view.draw_view(f, content_layout[0], chats_selected);
 					self.messages_view.draw_view(f, content_layout[1], !chats_selected);
@@ -354,9 +359,9 @@ impl MainApp {
 
 		let mut splits = self.input_view.input.split(' ').collect::<Vec<&str>>();
 		let cmd = splits.drain(0..1).as_slice()[0];
-		match cmd {
-			":q" | ":Q" => self.quit_app = true,
-			":c" | ":C" => {
+		match cmd.to_lowercase().as_str() {
+			":q" => self.quit_app = true,
+			":c" => {
 				if splits.len() > 0 {
 					let index = splits[0].parse::<usize>();
 					match index {
@@ -371,20 +376,20 @@ impl MainApp {
 					state.hint_msg = "Please insert an index".to_string();
 				}
 			},
-			":h" | ":H" => self.selected_box = DisplayBox::Help,
-			":s" | ":S" => {
+			":h" => self.selected_box = DisplayBox::Help,
+			":s" => {
 				let cmd = splits.join(" ");
 				self.send_text(Some(cmd), None);
 			},
-			":r" | ":R" => {
+			":r" => {
 				self.redraw_all = true;
 				self.chats_view.reload_chats();
 			},
-			":b" | ":B" => {
+			":b" => {
 				let ops = splits.iter().map(|o| o.to_string()).collect::<Vec<String>>();
 				self.bind_var(ops);
 			},
-			":a" | ":A" => {
+			":a" => {
 				if splits.len() > 0 {
 					let index = splits[0].parse::<usize>();
 					match index {
@@ -399,10 +404,49 @@ impl MainApp {
 					state.hint_msg = "Please insert an index".to_string();
 				}
 			},
-			":f" | ":F" => self.send_attachments(splits),
-			":t" | ":T" => {
+			":f" => self.send_attachments(splits),
+			":t" => {
 				let tapback = splits.join("");
 				self.send_tapback(&tapback);
+			},
+			":dt" => {
+				if let Some(ls) = self.last_selected {
+					let chat = &self.chats_view.chats[ls].chat_identifier;
+
+					if self.messages_view.delete_current_text(chat) {
+						self.chats_view.reload_chats();
+					}
+				}
+			},
+			":dc" => {
+				if splits.len() > 0 {
+					let chat = splits[0];
+					let del_str = if let Ok(set) = SETTINGS.read() {
+						set.delete_string(&chat, None)
+					} else { "".to_owned() };
+
+					if del_str.len() > 0 {
+						match APICLIENT.get_url_string(&del_str) {
+							Err(err) => if let Ok(mut state) = STATE.write() {
+								state.hint_msg = format!("Failed to delete conversation: {}", err);
+							},
+							Ok(_) => {
+								if let Ok(mut state) = STATE.write() {
+									state.hint_msg = format!("deleted conversation :)");
+								}
+
+								self.chats_view.reload_chats();
+							},
+						}
+					}
+
+				} else if let Some(ls) = self.last_selected {
+					let chat = self.chats_view.chats[ls].chat_identifier.as_str();
+
+					if let Ok(mut state) = STATE.write() {
+						state.hint_msg = format!("Please enter ':dc {}' if you'd like to delete this conversation", chat);
+					}
+				}
 			},
 			x => {
 				if let Ok(mut state) = STATE.write() {
@@ -459,6 +503,10 @@ impl MainApp {
 		match text.message_type {
 			MessageType::Normal => {
 				let past = self.chats_view.new_text(&text);
+				let name = text.sender.as_ref().unwrap_or(
+					text.chat_identifier.as_ref().unwrap()).to_owned();
+				let text_content = text.text.to_owned();
+				let show_notif = !text.is_from_me;
 
 				if let Some(idx) = past {
 					if let Some(ls) = self.last_selected {
@@ -470,9 +518,16 @@ impl MainApp {
 						}
 					}
 				}
+
+				if show_notif {
+					Settings::show_notification(&name, &text_content);
+				}
 			},
 			MessageType::Typing | MessageType::Idle => {
 				if let Some(ref id) = text.chat_identifier {
+					let name = text.sender.as_ref().unwrap_or(
+						id).to_owned();
+
 					if let Some(ls) = self.last_selected {
 						if id == self.chats_view.chats[ls].chat_identifier.as_str() {
 							if let MessageType::Idle = text.message_type {
@@ -482,6 +537,8 @@ impl MainApp {
 							}
 						}
 					}
+
+					Settings::show_notification(&name, &format!("{} is typing...", name));
 				}
 			},
 		}
@@ -563,6 +620,7 @@ impl MainApp {
 	}
 }
 
+#[derive(PartialEq)]
 enum DisplayBox {
 	Chats,
 	Messages,

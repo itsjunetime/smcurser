@@ -236,8 +236,8 @@ impl MessagesView {
 		}
 	}
 
-	pub fn load_in_conversation(&mut self, id: &String) {
-		self.messages = APICLIENT.get_texts(id.as_str().to_string(), None, None, None, None);
+	pub fn load_in_conversation(&mut self, id: &str) {
+		self.messages = APICLIENT.get_texts(id.to_string(), None, None, None, None);
 		self.messages.reverse(); // cause ya gotta
 
 		self.last_width = 0;
@@ -400,5 +400,38 @@ impl MessagesView {
 
 			}
 		}
+	}
+
+	pub fn delete_current_text(&mut self, chat_id: &str) -> bool {
+		if self.messages.len() as u16 <= self.selected_msg {
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "failed to delete text (not enough messages)".to_owned();
+			}
+			return false;
+		}
+
+		let identifier = &self.messages[self.selected_msg as usize].guid;
+		
+		let del_url = if let Ok(set) = SETTINGS.read() {
+			set.delete_string(chat_id, Some(identifier))
+		} else { "".to_owned() };
+
+		if del_url.len() > 0 {
+			match APICLIENT.get_url_string(&del_url) {
+				Err(err) => if let Ok(mut state) = STATE.write() {
+					state.hint_msg = format!("failed to delete text: {}", err);
+				},
+				Ok(_) => {
+					if let Ok(mut state) = STATE.write() {
+						state.hint_msg = "deleted text :)".to_owned();
+					}
+					self.load_in_conversation(chat_id);
+
+					return true;
+				},
+			}
+		}
+
+		false
 	}
 }

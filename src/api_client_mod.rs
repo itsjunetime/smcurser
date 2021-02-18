@@ -19,8 +19,15 @@ impl APIClient {
 			.build()
 			.unwrap();
 
+		let timeout = if let Ok(set) = SETTINGS.read() {
+			set.timeout
+		} else {
+			10
+		};
+
 		let client = reqwest::blocking::Client::builder()
 			.use_preconfigured_tls(tls)
+			.connect_timeout(std::time::Duration::from_secs(timeout as u64))
 			.build()
 			.unwrap();
 

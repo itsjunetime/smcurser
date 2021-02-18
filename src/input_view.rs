@@ -45,12 +45,7 @@ impl InputView {
 			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - self.last_width as i32 - 2, 0) as u16;
 		}
 
-		if let Ok(mut state) = STATE.write() {
-			state.hint_msg = format!("lw: {}, b1: {}, b0: {}, len: {}, ro: {}",
-				self.last_width, self.bounds.1, self.bounds.0, self.input.len(), self.right_offset);
-		}
-
-		let render_string = 
+		let render_string =
 			&self.input[self.bounds.0 as usize..std::cmp::min(self.input.len(), self.bounds.1 as usize)];
 
 		let input_span = vec![Spans::from(vec![Span::raw(render_string)])];
@@ -261,7 +256,7 @@ impl InputView {
 
 		// ugh. complex logic. Just suffice it to say this handles setting all these parameters to
 		// the correct values for the input field to be pretty
-		if self.input.len() as u16 - self.right_offset >= self.last_width - 2 
+		if self.input.len() as u16 - self.right_offset >= self.last_width - 2
 			&& self.bounds.1 == self.input.len() as u16 - self.right_offset - 1 {
 
 			self.bounds.1 = self.input.len() as u16 - self.right_offset;

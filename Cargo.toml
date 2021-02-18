@@ -22,3 +22,4 @@ url = "2.2.0"
 open = "1.4.0"
 toml = "0.5.8"
 dirs = "3.0.1"
+notify-rust = { version = "4.2.2", features = ["image"] }
