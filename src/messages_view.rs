@@ -146,28 +146,35 @@ impl MessagesView {
 								let len = l.graphemes(true).count();
 								if len > m { len } else { m }
 							});
-						let space = msg_width - max;
+						let mut space = msg_width - max;
 
-						// add padding for my texts, put into spans
-						let mut lines: Vec<MessageLine> = text_lines.into_iter()
-							.map(|l| {
-								let text = if msg.is_from_me {
-									format!("{}{}", " ".repeat(space), l)
-								} else { l };
+						if msg.text.len() > 0 {
 
-								MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
-							})
-							.collect();
+							// add padding for my texts, put into spans
+							let mut lines: Vec<MessageLine> = text_lines.into_iter()
+								.map(|l| {
+									let text = if msg.is_from_me {
+										format!("{}{}", " ".repeat(space), l)
+									} else { l };
 
-						vec.append(&mut lines);
+									MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
+								})
+								.collect();
+
+							vec.append(&mut lines);
+						}
 
 						// do attachments
 						for att in msg.attachments.iter() {
-							let att_line = format!("{}Attachment {}: {}",
+							let att_str = format!("Attachment {}: {}",
+								att_temp.len(), att.mime_type);
+
+							space = std::cmp::max(msg_width - att_str.len(), space);
+
+							let att_line = format!("{}{}",
 											if msg.is_from_me { " ".repeat(space) }
 											else { "".to_string() },
-											att_temp.len(),
-											att.mime_type);
+											att_str);
 
 							if att_line.len() > max {
 								max = att_line.len();
@@ -296,7 +303,9 @@ impl MessagesView {
 
 		// Show the sender if it exists
 		if let Some(send) = &msg.sender {
-			if last.is_none() || send != last.unwrap().sender.as_ref().unwrap() || msg.date - last_timestamp >= 3600000000000 {
+			if last.is_none() || send != last.unwrap().sender.as_ref().unwrap_or(&"".to_owned())
+				|| msg.date - last_timestamp >= 3600000000000 {
+
 				if msg.date - last_timestamp < 3600000000000 {
 					self.line_list.push(MessageLine::blank(i));
 				}
@@ -411,7 +420,7 @@ impl MessagesView {
 		}
 
 		let identifier = &self.messages[self.selected_msg as usize].guid;
-		
+
 		let del_url = if let Ok(set) = SETTINGS.read() {
 			set.delete_string(chat_id, Some(identifier))
 		} else { "".to_owned() };
