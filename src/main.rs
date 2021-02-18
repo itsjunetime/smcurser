@@ -53,7 +53,7 @@ fn parse_args(args: Vec<String>) {
 	set.parse_args(args, false);
 }
 
-const HELP_MSG: [&str; 27] = [
+const HELP_MSG: [&str; 31] = [
 	"COMMANDS:",
 	":h, :H -",
 	"displays this help message",
@@ -81,6 +81,10 @@ const HELP_MSG: [&str; 27] = [
 	"this reloads the chats, getting current chats from the currently set ip address and port.",
 	":n, :N - ",
 	"this shows a new composition box, from which you can send a text to a new conversation (or to a conversation that you can\'t quickly access. Type in the recipient(s), then hit enter, and you\'ll be able to enter the body of the message. Once you enter the body, you won\'t be able to change the recipients. Hit ctrl+g to send the text.",
+	":dc - ",
+	"this deletes the current conversation (if you follow it with the chat_id, e.g. `:dc +11231231234`). If you don't, it will prompt you to do so.",
+	":dt - ",
+	"this deletes the currently selected text. There is no prompting, it immediately deletes it, so make sure that you are careful with this comand",
 ];
 
 const CMD_HELP: [&str; 47] = [

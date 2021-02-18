@@ -411,7 +411,7 @@ impl MessagesView {
 		}
 	}
 
-	pub fn delete_current_text(&mut self, chat_id: &str) -> bool {
+	pub fn delete_current_text(&mut self) -> bool {
 		if self.messages.len() as u16 <= self.selected_msg {
 			if let Ok(mut state) = STATE.write() {
 				state.hint_msg = "failed to delete text (not enough messages)".to_owned();
@@ -422,7 +422,7 @@ impl MessagesView {
 		let identifier = &self.messages[self.selected_msg as usize].guid;
 
 		let del_url = if let Ok(set) = SETTINGS.read() {
-			set.delete_string(chat_id, Some(identifier))
+			set.delete_text_string(identifier)
 		} else { "".to_owned() };
 
 		if del_url.len() > 0 {
@@ -434,8 +434,6 @@ impl MessagesView {
 					if let Ok(mut state) = STATE.write() {
 						state.hint_msg = "deleted text :)".to_owned();
 					}
-					self.load_in_conversation(chat_id);
-
 					return true;
 				},
 			}

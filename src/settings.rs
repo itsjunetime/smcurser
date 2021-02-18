@@ -154,7 +154,7 @@ impl Settings {
 	}
 
 	pub fn tapback_send_string(
-		&self, tapback: i8, tap_guid: &str, tap_in_chat: &str, remove_tap: Option<bool>
+		&self, tapback: i8, tap_guid: &str, remove_tap: Option<bool>
 	) -> String {
 		let rs = match remove_tap {
 			Some(val) => format!("&remove_tap={}", val),
@@ -163,7 +163,7 @@ impl Settings {
 
 		if tapback < 0 || tapback > 5 { return String::from(""); }
 
-		self.push_to_req_url(format!("send?tapback={}&tap_guid={}&tap_in_chat={}{}", tapback, tap_guid, tap_in_chat, rs))
+		self.push_to_req_url(format!("send?tapback={}&tap_guid={}{}", tapback, tap_guid, rs))
 	}
 
 	pub fn text_send_string(&self) -> String {
@@ -196,12 +196,12 @@ impl Settings {
 		self.push_to_req_url(format!("data?path={}", path))
 	}
 
-	pub fn delete_string(&self, chat: &str, text: Option<&str>) -> String {
-		let text_str = if let Some(t) = text {
-			format!("&delete_text={}", t)
-		} else { "".to_owned() };
+	pub fn delete_chat_string(&self, chat: &str) -> String {
+		self.push_to_req_url(format!("send?delete_chat={}", chat))
+	}
 
-		self.push_to_req_url(format!("send?delete_chat={}{}", chat, text_str))
+	pub fn delete_text_string(&self, text: &str) -> String {
+		self.push_to_req_url(format!("send?delete_text={}", text))
 	}
 
 	pub fn parse_args(&mut self, mut args: Vec<String>, tui_mode: bool) {

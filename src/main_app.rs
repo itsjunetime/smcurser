@@ -108,15 +108,32 @@ impl MainApp {
 					.build()
 					.unwrap();
 
-				let stream = std::net::TcpStream::connect(format!("{}:{}", host, port)).unwrap();
-				let tls_stream = connector.connect(&host, stream).unwrap();
+				let mut stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
 				let parsed_url = url::Url::parse(
 					&format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port)
 				).unwrap();
 
+				let mut tls_stream: Option<native_tls::TlsStream<std::net::TcpStream>> = None;
+
+				while tls_stream.is_none() {
+					match stream_try {
+						Ok(stream) => {
+							tls_stream = Some(connector.connect(&host, stream).unwrap());
+							break;
+						},
+						Err(_) => {
+							if let Ok(mut state) = STATE.write() {
+								state.hint_msg = "Websocket disconnected; retrying...".to_owned();
+							}
+							stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
+							std::thread::sleep(Duration::from_secs(2));
+						}
+					}
+				};
+
 				tungstenite::client::client_with_config(
 					parsed_url,
-					tls_stream,
+					tls_stream.unwrap(),
 					config
 				)
 			};
@@ -131,8 +148,8 @@ impl MainApp {
 							match msg {
 								Ok(tungstenite::Message::Text(val)) => {
 									let mut splits = val.splitn(2, ':');
-									let prefix = splits.next().unwrap();
-									let content = splits.next().unwrap();
+									let prefix = splits.next().unwrap_or("");
+									let content = splits.next().unwrap_or("");
 
 									match prefix {
 										"text" => {
@@ -413,7 +430,8 @@ impl MainApp {
 				if let Some(ls) = self.last_selected {
 					let chat = &self.chats_view.chats[ls].chat_identifier;
 
-					if self.messages_view.delete_current_text(chat) {
+					if self.messages_view.delete_current_text() {
+						self.messages_view.load_in_conversation(chat);
 						self.chats_view.reload_chats();
 					}
 				}
@@ -422,7 +440,7 @@ impl MainApp {
 				if splits.len() > 0 {
 					let chat = splits[0];
 					let del_str = if let Ok(set) = SETTINGS.read() {
-						set.delete_string(&chat, None)
+						set.delete_chat_string(&chat)
 					} else { "".to_owned() };
 
 					if del_str.len() > 0 {
@@ -598,12 +616,10 @@ impl MainApp {
 		let guid = &self.messages_view.messages[self.messages_view.selected_msg as usize].guid;
 
 		if let Some(idx) = msgs.iter().position(|c| *c == tap) {
-			if let Some(ls) = self.chats_view.last_selected {
-
-				let chat = &self.chats_view.chats[ls].chat_identifier;
+			if let Some(_) = self.chats_view.last_selected {
 
 				let tap_url = SETTINGS.read().unwrap()
-					.tapback_send_string(idx as i8, &guid, &chat, None);
+					.tapback_send_string(idx as i8, &guid, None);
 
 				match APICLIENT.get_url_string(&tap_url) {
 					Err(err) => if let Ok(mut state) = STATE.write() {
