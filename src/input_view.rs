@@ -138,8 +138,7 @@ impl InputView {
 
 	pub fn handle_tab_completion(&mut self) {
 		// So this is my messy attempt at tab completion. It actually works ok-ish
-		// It doesn't work on Windows rn (I think) since it sees directory separators
-		// as '/' instead of '\'.
+		// I think it works on Windows but I can't say for certain
 
 		let mut splits = self.input.split(" ").collect::<Vec<&str>>();
 		splits.remove(0);
@@ -161,7 +160,8 @@ impl InputView {
 		};
 
 		// get the path for the attachment that hasn't fully been input yet
-		let incomplete = incomplete_opt.last().unwrap();
+		let incomplete = incomplete_opt.last()
+			.expect("Couldn't get last character of incomplete_opt");
 
 		// separate it by "/", join all but last since that is probably
 		// the file that hasn't fully been input yet
@@ -170,14 +170,12 @@ impl InputView {
 			.collect::<Vec<&str>>()
 			.join("");
 
-		// TODO: Add support for Windows with its weird \ instead of /
-
 		// Here we iterate over the parent directories and make sure they weren't
 		// escaping a "/" with a "\" in the file that wasn't fully input yet
 		let mut to_drop = 0;
 
 		for c in top_dirs.iter().rev() {
-			if c.len() > 0 && c.chars().last().unwrap() == '\\' {
+			if c.len() > 0 && c.chars().last().unwrap_or('-') == '\\' {
 				to_drop += 1;
 			} else {
 				break;
@@ -208,39 +206,41 @@ impl InputView {
 		match dir_contents {
 			Err(_) => return,
 			Ok(items) => {
-				for item in items {
-					let path = item.unwrap().path();
+				for it in items {
+					if let Ok(item) = it {
+						let path = item.path();
 
-					// tmp_path = the file or dir name (including dot
-					// between name and extension or trailing slash for directory
-					let tmp_path = format!("{}{}{}",
-						if let Some(fs) = path.file_stem() {
-							fs.to_str().unwrap()
-						} else { "" },
-						if let Some(ex) = path.extension() {
-							format!(".{}", ex.to_str().unwrap())
-						} else { "".to_owned() },
-						if path.is_dir() {
-							dir_char
-						} else { "" }
-					);
+						// tmp_path = the file or dir name (including dot
+						// between name and extension or trailing slash for directory
+						let tmp_path = format!("{}{}{}",
+							if let Some(fs) = path.file_stem() {
+								fs.to_str().unwrap_or("")
+							} else { "" },
+							if let Some(ex) = path.extension() {
+								format!(".{}", ex.to_str().unwrap_or(""))
+							} else { "".to_owned() },
+							if path.is_dir() {
+								dir_char
+							} else { "" }
+						);
 
-					let path_str = tmp_path.as_str();
+						let path_str = tmp_path.as_str();
 
-					// if the file that is currently being iterated over is the same length or
-					// shorter than what they've input, don't even try to match it
-					if path_str.len() <= file.len() {
-						continue
-					}
+						// if the file that is currently being iterated over is the same length or
+						// shorter than what they've input, don't even try to match it
+						if path_str.len() <= file.len() {
+							continue
+						}
 
-					// If it's a possibility for the file they were trying to input, auto-fill the
-					// input string with the whole file path
-					if path_str[..file.len()] == file {
-						let full_path = format!("{}{}{}", dir, dir_char, path_str);
+						// If it's a possibility for the file they were trying to input, auto-fill the
+						// input string with the whole file path
+						if path_str[..file.len()] == file {
+							let full_path = format!("{}{}{}", dir, dir_char, path_str);
 
-						self.input.truncate(self.input.len() - incomplete.len());
-						self.input = format!("{}{}", self.input, full_path);
-						break;
+							self.input.truncate(self.input.len() - incomplete.len());
+							self.input = format!("{}{}", self.input, full_path);
+							break;
+						}
 					}
 				}
 			},
@@ -274,13 +274,16 @@ impl InputView {
 
 	pub fn change_command(&mut self, up: bool) {
 		if up {
-			if self.last_commands.len() > 0 && self.tabbed_up.is_none() {
-				self.tabbed_up = Some(0);
-				self.input = self.last_commands[0].as_str().to_owned();
-			} else if self.last_commands.len() as u16 > self.tabbed_up.unwrap() + 1 {
-				self.tabbed_up = Some(self.tabbed_up.unwrap() + 1);
-				self.input = self.last_commands[self.tabbed_up.unwrap() as usize]
-					.as_str().to_owned();
+			match self.tabbed_up {
+				None => if self.last_commands.len() > 0 {
+					self.tabbed_up = Some(0);
+					self.input = self.last_commands[0].as_str().to_owned();
+				},
+				Some(tu) => if self.last_commands.len() as u16 > tu + 1 {
+					self.tabbed_up = Some(tu + 1);
+					self.input = self.last_commands[tu as usize]
+						.as_str().to_owned();
+				}
 			}
 		} else {
 			if let Some(tab) = self.tabbed_up {

@@ -41,7 +41,7 @@ impl Settings {
 			config_dir.push("smserver");
 			config_dir.set_extension("toml");
 
-			config_dir.into_os_string().into_string().unwrap()
+			config_dir.into_os_string().into_string().unwrap_or("".to_owned())
 		};
 
 		Settings {
@@ -124,17 +124,23 @@ impl Settings {
 
 		let ns = match num {
 			Some(val) => format!("&num_messages={}", val),
-			None => String::from("")
+			None => "".to_owned()
 		};
 
-		let os = if offset == None { String::from("") } else { format!("&messages_offset={}", offset.unwrap()) };
+		let os = match offset {
+			Some(off) => format!("&messages_offset={}", off),
+			None => "".to_owned()
+		};
 
 		let rs = match read {
 			None => "",
 			Some(val) => if val { "&read_messages=true" } else { "&read_messages=false" },
 		};
 
-		let fs = if from == None { String::from("") } else { format!("&messages_from={}", from.unwrap()) };
+		let fs = match from {
+			Some(fr) => format!("&messages_from={}", fr),
+			None => "".to_owned()
+		};
 
 		self.push_to_req_url(format!("requests?messages={}{}{}{}{}", c, ns, os, rs, fs))
 	}
@@ -224,7 +230,7 @@ impl Settings {
 		let mut it = args.iter();
 
 		while let Some(arg) = it.next() {
-			if !tui_mode && arg.len() > 0 && arg.chars().nth(0).unwrap() != '-' {
+			if !tui_mode && arg.len() > 0 && arg.chars().nth(0).unwrap_or(' ') != '-' {
 				println!("Option {} not recognized. Skipping...", arg);
 				continue;
 			}

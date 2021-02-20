@@ -17,7 +17,7 @@ impl APIClient {
 			.danger_accept_invalid_certs(true)
 			.danger_accept_invalid_hostnames(true)
 			.build()
-			.unwrap();
+			.expect("Unable to build TlsConnector; panicking");
 
 		let timeout = if let Ok(set) = SETTINGS.read() {
 			set.timeout
@@ -29,7 +29,7 @@ impl APIClient {
 			.use_preconfigured_tls(tls)
 			.connect_timeout(std::time::Duration::from_secs(timeout as u64))
 			.build()
-			.unwrap();
+			.expect("Unable to build API Client; panicking");
 
 		APIClient { client }
 	}
@@ -37,11 +37,12 @@ impl APIClient {
 	pub fn get_url_string(&self, url: &str) -> Result<String, reqwest::Error> {
 		let response = self.client.get(url).send()?;
 
-		Ok(response.text().unwrap())
+		Ok(response.text().unwrap_or("".to_owned()))
 	}
 
 	pub fn authenticate(&self) -> bool {
-		let url = SETTINGS.read().unwrap().pass_req_string(None);
+		let url = SETTINGS.read().expect("Cannot read settings")
+			.pass_req_string(None);
 		let res = self.get_url_string(&url);
 
 		let got_auth =  match res {
@@ -62,7 +63,7 @@ impl APIClient {
 	}
 
 	pub fn check_auth(&self) -> bool {
-		if !SETTINGS.read().unwrap().authenticated {
+		if !SETTINGS.read().expect("Cannot read settings").authenticated {
 			self.authenticate()
 		} else {
 			true
@@ -72,9 +73,11 @@ impl APIClient {
 	pub fn get_chats(&self, num: Option<i64>, offset: Option<i64>) -> Vec<Conversation> {
 		if !self.check_auth() { return Vec::new(); }
 
-		let req_str = SETTINGS.read().unwrap().chat_req_string(num, offset);
+		let req_str = SETTINGS.read().expect("Cannot read settings")
+			.chat_req_string(num, offset);
 
-		let response = self.get_url_string(&req_str).unwrap();
+		let response = self.get_url_string(&req_str)
+			.unwrap_or("".to_owned());
 
 		let json: serde_json::Value = serde_json::from_str(&response).expect("Bad JSON :(");
 		let mut ret_vec = Vec::new();

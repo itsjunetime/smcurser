@@ -15,7 +15,7 @@ use core::time::Duration;
 use tui::{
 	layout::{Constraint, Direction, Layout},
 	text::{Span, Spans},
-	widgets::{Block, Borders, Paragraph, Wrap},
+	widgets::{Block, Borders, Paragraph, Wrap, BorderType},
 	style::Style,
 };
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
@@ -25,6 +25,7 @@ pub struct MainApp {
 	selected_box: DisplayBox,
 	quit_app: bool,
 	redraw_all: bool,
+	help_scroll: u16,
 	chats_view: ChatsView,
 	messages_view: MessagesView,
 	input_view: InputView,
@@ -37,6 +38,7 @@ impl MainApp {
 			selected_box: DisplayBox::Chats,
 			quit_app: false,
 			redraw_all: false,
+			help_scroll: 0,
 			chats_view: ChatsView::new(),
 			messages_view: MessagesView::new(),
 			input_view: InputView::new(),
@@ -215,8 +217,15 @@ impl MainApp {
 					// if we're showing the help box, just draw the help box and nothing else
 					let text: Vec<Spans> = HELP_MSG.iter().map(|m| Spans::from(vec![Span::raw(*m)])).collect();
 					let help_msg_widget = Paragraph::new(text)
-						.block(Block::default().title(help_title).borders(Borders::ALL))
-						.wrap(Wrap { trim: true });
+						.block(
+							Block::default()
+								.title(help_title)
+								.borders(Borders::ALL)
+								.border_type(BorderType::Rounded)
+								.border_style(Style::default().fg(colorscheme.selected_box))
+						)
+						.wrap(Wrap { trim: true })
+						.scroll((self.help_scroll, 0));
 
 					f.render_widget(help_msg_widget, size);
 				},
@@ -331,10 +340,9 @@ impl MainApp {
 									continue;
 
 								} else {
-									let dist: u16 = if distance.len() == 0 {
-										1
-									} else {
-										distance.parse().unwrap_or_else(|_| 1 )
+									let dist: u16 = match distance.len() {
+										0 => 1,
+										_ => distance.parse().unwrap_or_else(|_| 1 )
 									};
 
 									self.handle_input_char(c, dist);
@@ -488,6 +496,13 @@ impl MainApp {
 		match self.selected_box {
 			DisplayBox::Chats => self.chats_view.scroll(up, distance),
 			DisplayBox::Messages => self.messages_view.scroll(up, distance),
+			DisplayBox::Help => {
+				if up {
+					self.help_scroll = std::cmp::max(self.help_scroll as i32 - distance as i32, 0) as u16;
+				} else {
+					self.help_scroll = std::cmp::min(HELP_MSG.len() as u16, self.help_scroll + distance);
+				}
+			},
 			_ => {
 				if let Ok(mut state) = STATE.write() {
 					state.hint_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
