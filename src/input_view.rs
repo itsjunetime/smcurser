@@ -10,6 +10,7 @@ use tui::{
 	terminal::Frame,
 };
 use std::vec::Vec;
+use crossterm::event::KeyCode;
 
 pub struct InputView {
 	pub input: String,
@@ -18,6 +19,7 @@ pub struct InputView {
 	pub last_width: u16,
 	pub last_commands: Vec<String>,
 	pub tabbed_up: Option<u16>,
+	pub custom_title: Option<String>,
 }
 
 impl InputView {
@@ -29,15 +31,20 @@ impl InputView {
 			last_width: 0,
 			last_commands: Vec::new(),
 			tabbed_up: None,
+			custom_title: None,
 		}
 	}
 
-	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect) {
-		let (title, colorscheme) = if let Ok(set) = SETTINGS.read() {
+	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect, selected: bool) {
+		let (mut title, colorscheme) = if let Ok(set) = SETTINGS.read() {
 			(set.input_title.to_owned(), Colorscheme::from(&set.colorscheme))
 		} else {
 			("| input here :) |".to_owned(), Colorscheme::from("forest"))
 		};
+
+		if let Some(custom) = &self.custom_title {
+			title = custom.to_owned();
+		}
 
 		if self.last_width != frame.size().width {
 			self.last_width = frame.size().width;
@@ -56,16 +63,34 @@ impl InputView {
 					.title(title)
 					.borders(Borders::ALL)
 					.border_type(BorderType::Rounded)
-					.border_style(Style::default().fg(colorscheme.unselected_box))
+					.border_style(Style::default().fg(
+						if selected {
+							colorscheme.selected_box
+						} else {
+							colorscheme.unselected_box
+						}
+					))
 			);
 		frame.render_widget(input_widget, rect);
 
-		let cursor_x = std::cmp::min(
-			self.last_width - 2,
-			self.input.len() as u16 - self.right_offset - self.bounds.0 + 1
-		);
+		// not perfect logic but works with the flow of drawing to make everything look nice
+		if self.input.len() > 0 {
+			let cursor_x = std::cmp::min(
+				self.last_width - 2,
+				self.input.len() as u16 - self.right_offset - self.bounds.0 + 1
+			);
 
-		frame.set_cursor(cursor_x, frame.size().height - 3);
+			frame.set_cursor(rect.x + cursor_x, rect.y + 1);
+		}
+	}
+
+	pub fn route_keycode(&mut self, code: KeyCode) {
+		match code {
+			KeyCode::Backspace => self.handle_backspace(),
+			KeyCode::Esc => self.handle_escape(),
+			KeyCode::Tab => self.handle_tab(),
+			_ => (),
+		}
 	}
 
 	pub fn append_char(&mut self, ch: char) {

@@ -115,6 +115,15 @@ impl APIClient {
 		ret_vec
 	}
 
+	pub fn get_name(&self, chat_id: &str) -> String {
+		if !self.check_auth() { return "".to_owned(); }
+
+		let req_str = SETTINGS.read().expect("Unable to read settings")
+			.name_req_string(chat_id);
+
+		self.get_url_string(&req_str).unwrap_or("".to_owned())
+	}
+
 	pub fn send_text(
 		&self, body: Option<String>, subject: Option<String>, chat_id: String, files: Option<Vec<String>>, photos: Option<String>
 	) -> bool {

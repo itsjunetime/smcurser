@@ -29,10 +29,18 @@ pub struct MainApp {
 	chats_view: ChatsView,
 	messages_view: MessagesView,
 	input_view: InputView,
+	address_view: InputView,
+	compose_body_view: InputView,
 }
 
 impl MainApp {
 	pub fn new() -> MainApp {
+		let mut address_view = InputView::new();
+		address_view.custom_title = Some("| address |".to_owned());
+
+		let mut compose_body_view = InputView::new();
+		compose_body_view.custom_title = Some("| body |".to_owned());
+
 		MainApp {
 			last_selected: None,
 			selected_box: DisplayBox::Chats,
@@ -42,6 +50,8 @@ impl MainApp {
 			chats_view: ChatsView::new(),
 			messages_view: MessagesView::new(),
 			input_view: InputView::new(),
+			address_view: address_view,
+			compose_body_view: compose_body_view,
 		}
 	}
 
@@ -229,7 +239,7 @@ impl MainApp {
 
 					f.render_widget(help_msg_widget, size);
 				},
-				DisplayBox::Chats | DisplayBox::Messages | DisplayBox::Compose => {
+				_ => {
 					// set up layouts
 					let main_layout = Layout::default()
 						.direction(Direction::Vertical)
@@ -248,14 +258,35 @@ impl MainApp {
 								Constraint::Percentage(30),
 								Constraint::Percentage(70),
 							].as_ref()
-						)
-						.split(main_layout[0]);
+						).split(main_layout[0]);
 
 					let chats_selected = self.selected_box == DisplayBox::Chats;
 
 					self.chats_view.draw_view(f, content_layout[0], chats_selected);
-					self.messages_view.draw_view(f, content_layout[1], !chats_selected);
-					self.input_view.draw_view(f, main_layout[1]);
+					self.input_view.draw_view(f, main_layout[1], false);
+
+					if DisplayBox::ComposeAddress == self.selected_box
+						|| DisplayBox::ComposeBody == self.selected_box {
+
+						let message_layout = Layout::default()
+							.direction(Direction::Vertical)
+							.constraints(
+								[
+									Constraint::Length(3),
+									Constraint::Min(3),
+									Constraint::Length(3)
+								].as_ref()
+							).split(content_layout[1]);
+
+						self.address_view.draw_view(f, message_layout[0],
+							self.selected_box == DisplayBox::ComposeAddress);
+						self.messages_view.draw_view(f, message_layout[1], false);
+						self.compose_body_view.draw_view(f, message_layout[2],
+							self.selected_box == DisplayBox::ComposeBody);
+
+					} else {
+						self.messages_view.draw_view(f, content_layout[1], !chats_selected);
+					}
 
 					// create a span for the help box add the help string
 					let hint_msg = if let Ok(state) = STATE.read() {
@@ -303,36 +334,70 @@ impl MainApp {
 				match read()? {
 					Event::Key(event) => {
 						match event.code {
-							KeyCode::Backspace => self.input_view.handle_backspace(),
-							KeyCode::Enter => if self.input_view.input.len() > 0 { self.handle_full_input() },
+							KeyCode::Backspace | KeyCode::Tab | KeyCode::Esc => {
+								match self.selected_box {
+									DisplayBox::ComposeBody => self.compose_body_view.route_keycode(event.code),
+									DisplayBox::ComposeAddress => self.address_view.route_keycode(event.code),
+									_ => self.input_view.route_keycode(event.code),
+								};
+							},
+
+							KeyCode::Enter => {
+								match self.selected_box {
+									DisplayBox::ComposeAddress => {
+										self.selected_box = DisplayBox::ComposeBody;
+										self.messages_view.load_in_conversation(&self.address_view.input);
+									},
+									DisplayBox::ComposeBody => {
+										let chat = &self.address_view.input;
+
+										self.send_text(Some(chat.to_owned()),
+											Some(self.compose_body_view.input.to_owned()), None);
+
+										self.messages_view.load_in_conversation(chat);
+
+										self.selected_box = DisplayBox::Messages;
+									},
+									_ => if self.input_view.input.len() > 0 {
+										self.handle_full_input();
+									}
+								}
+							}
 							// left and right move the cursor if there's input in the box, else they
 							// just switch which box is selected
 							KeyCode::Left | KeyCode::Right => {
-								if self.input_view.input.len() > 0 {
-									let right = if let KeyCode::Right = event.code { true } else { false };
-									let dist: u16 = distance.parse().unwrap_or(1);
-									self.input_view.scroll(right, dist);
-								} else {
-									self.switch_selected_box();
+								let right = event.code == KeyCode::Right;
+								let dist: u16 = distance.parse().unwrap_or(1);
+
+								match self.selected_box {
+									DisplayBox::ComposeAddress => self.address_view.scroll(right, dist),
+									DisplayBox::ComposeBody => self.compose_body_view.scroll(right, dist),
+									_ => if self.input_view.input.len() > 0 {
+										self.input_view.scroll(event.code == KeyCode::Right, dist);
+									} else {
+										self.switch_selected_box();
+									},
 								}
 							},
-							// will add tab completion for file selection later
-							KeyCode::Tab => self.input_view.handle_tab(),
-							// easy way to cancel what you're typing
-							KeyCode::Esc => {
-								self.input_view.handle_escape();
-								if let Ok(mut state) = STATE.write() {
-									state.hint_msg = "Command cancelled".to_string();
-								}
+							KeyCode::Up | KeyCode::Down => if self.selected_box != DisplayBox::ComposeBody
+								&& self.selected_box != DisplayBox::ComposeAddress {
+
+								self.input_view.change_command(event.code == KeyCode::Up);
 							},
-							KeyCode::Up | KeyCode::Down =>
-								self.input_view.change_command(event.code == KeyCode::Up),
 							// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
 							// for people to invoke it to exit if that's what they're used to.
 							KeyCode::Char(c) => {
 								if event.modifiers == KeyModifiers::CONTROL && c == 'c' {
-									self.quit_app = true;
-								} else if c.is_digit(10) && self.input_view.input.len() == 0 {
+									// however, we're gonna use ctrl+c to get out of the compose
+									// view if you don't want to go through with the new message
+									match self.selected_box {
+										DisplayBox::ComposeAddress | DisplayBox::ComposeBody =>
+											self.selected_box = DisplayBox::Messages,
+										_ => self.quit_app = true,
+									}
+								} else if c.is_digit(10) && self.input_view.input.len() == 0 &&
+									self.selected_box != DisplayBox::ComposeBody &&
+									self.selected_box != DisplayBox::ComposeAddress {
 
 									// test for digits to allow for vim-like scrolling, multiple lines
 									// at once.
@@ -342,10 +407,16 @@ impl MainApp {
 								} else {
 									let dist: u16 = match distance.len() {
 										0 => 1,
-										_ => distance.parse().unwrap_or_else(|_| 1 )
+										_ => distance.parse().unwrap_or(1)
 									};
 
-									self.handle_input_char(c, dist);
+									// compose boxes just get the input input, they don't handle it
+									// specially.
+									match self.selected_box {
+										DisplayBox::ComposeAddress => self.address_view.append_char(c),
+										DisplayBox::ComposeBody => self.compose_body_view.append_char(c),
+										_ => self.handle_input_char(c, dist),
+									}
 								}
 							}
 							_ => continue,
@@ -404,7 +475,7 @@ impl MainApp {
 			":h" => self.selected_box = DisplayBox::Help,
 			":s" => {
 				let cmd = splits.join(" ");
-				self.send_text(Some(cmd), None);
+				self.send_text(None, Some(cmd), None);
 			},
 			":r" => {
 				self.redraw_all = true;
@@ -434,6 +505,10 @@ impl MainApp {
 				let tapback = splits.join("");
 				self.send_tapback(&tapback);
 			},
+			":n" => {
+				self.selected_box = DisplayBox::ComposeAddress;
+				self.messages_view.load_in_conversation("");
+			}
 			":dt" => {
 				if let Some(ls) = self.last_selected {
 					let chat = &self.chats_view.chats[ls].chat_identifier;
@@ -577,17 +652,24 @@ impl MainApp {
 		}
 	}
 
-	fn send_text(&self, text: Option<String>, files: Option<Vec<String>>) {
-		if let Some(sel) = self.last_selected {
+	fn send_text(&self, chat_id: Option<String>, text: Option<String>, files: Option<Vec<String>>) {
+		let chat_option = match chat_id {
+			Some(ch) => Some(ch),
+			None => {
+				match self.last_selected {
+					Some(sel) => Some(self.chats_view.chats[sel]
+						.chat_identifier.to_owned()),
+					None => None,
+				}
+			}
+		};
+
+		if let Some(id) = chat_option {
 			let in_files = if let Some(fil) = files {
 				fil
 			} else {
 				Vec::new()
 			};
-
-			let id = self.chats_view.chats[sel]
-				.chat_identifier
-				.to_string();
 
 			let sent = APICLIENT.send_text(text, None, id, Some(in_files), None);
 
@@ -606,7 +688,7 @@ impl MainApp {
 
 		let files_to_send = self.input_view.get_typed_attachments(orig);
 
-		self.send_text(None, Some(files_to_send));
+		self.send_text(None, None, Some(files_to_send));
 	}
 
 	fn bind_var(&mut self, ops: Vec<String>) {
@@ -656,5 +738,6 @@ enum DisplayBox {
 	Chats,
 	Messages,
 	Help,
-	Compose,
+	ComposeAddress,
+	ComposeBody,
 }

@@ -176,6 +176,10 @@ impl Settings {
 		self.push_to_req_url("send".to_string())
 	}
 
+	pub fn name_req_string(&self, chat_id: &str) -> String {
+		self.push_to_req_url(format!("requests?name={}", chat_id))
+	}
+
 	#[allow(dead_code)]
 	pub fn search_req_string(
 		&self, term: String, case_sensitive: Option<bool>, bridge_gaps: Option<bool>, group_by: Option<String>
