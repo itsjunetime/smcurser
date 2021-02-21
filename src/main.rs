@@ -25,8 +25,6 @@ lazy_static! {
 
 fn main() -> Result<(), io::Error> {
 	// clears screen
-	print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
-
 	let mut args = std::env::args().collect::<Vec<String>>();
 	args.remove(0);
 	parse_args(args);
@@ -36,6 +34,13 @@ fn main() -> Result<(), io::Error> {
 			for s in CMD_HELP.iter() {
 				println!("{}", s);
 			}
+			return Ok(());
+		}
+	}
+
+	if let Ok(set) = SETTINGS.read() {
+		if set.host.len() == 0 {
+			eprintln!("\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to");
 			return Ok(());
 		}
 	}

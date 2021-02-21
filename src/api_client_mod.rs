@@ -40,31 +40,28 @@ impl APIClient {
 		Ok(response.text().unwrap_or("".to_owned()))
 	}
 
-	pub fn authenticate(&self) -> bool {
+	pub fn authenticate(&self) -> Result<bool, reqwest::Error> {
 		let url = SETTINGS.read().expect("Cannot read settings")
 			.pass_req_string(None);
-		let res = self.get_url_string(&url);
+		let res = self.get_url_string(&url)?;
 
-		let got_auth =  match res {
-			Err(err) => {
-				println!("err: {}", err);
-				false
-			},
-			Ok(val) => val.to_string().parse().unwrap_or_else(|_| false),
-		};
-
-		if got_auth {
-			if let Ok(mut set) = SETTINGS.write() {
-				set.authenticated = true;
+		match res.parse().unwrap_or_else(|_| false) {
+			true => {
+				if let Ok(mut set) = SETTINGS.write() {
+					set.authenticated = true;
+				}
+				Ok(true)
 			}
+			false => Ok(false)
 		}
-
-		got_auth
 	}
 
 	pub fn check_auth(&self) -> bool {
 		if !SETTINGS.read().expect("Cannot read settings").authenticated {
-			self.authenticate()
+			match self.authenticate() {
+				Ok(auth) => auth,
+				Err(_) => false,
+			}
 		} else {
 			true
 		}

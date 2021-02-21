@@ -56,23 +56,40 @@ impl MainApp {
 	}
 
 	pub fn main_loop(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Error> {
+		let auth = APICLIENT.authenticate();
 
-		if let Ok(set) = SETTINGS.read() {
-			if set.host.len() == 0 {
-				eprintln!("You didn't specify a host to connect to. Please either edit your config file ({}) to include a host \
-					or pass one in after the \x1b[1m--host\x1b[0m flag", set.config_file);
-				return Err(Error::new(ErrorKind::Other, "No specified host"));
-			}
-		}
+		let didnt_auth = if let Err(_) = auth {
+			true
+		} else if let Ok(b) = auth {
+			!b
+		} else { true };
 
-		if !APICLIENT.check_auth() {
-			eprintln!("Failed to authenticate. Trying fallback host...");
+		if didnt_auth {
+
+			let err_str = if let Err(e) = auth {
+				e.to_string()
+			} else { "".to_owned() };
+
+			let err = "\x1b[31;1mERROR:\x1b[0m";
+
+			let address = if let Ok(set) = SETTINGS.read() {
+				format!("http{}://{}:{}",
+					if set.secure { "s" } else { "" },
+					set.host,
+					set.server_port
+				)
+			} else {
+				"".to_owned()
+			};
+
+			eprintln!("{} Failed to authenticate with {} - {}", err, address, err_str);
+			eprintln!("Trying fallback host...");
 			if let Ok(mut set) = SETTINGS.write() {
 				set.host = set.fallback_host.to_owned();
 			}
 
 			if !APICLIENT.check_auth() {
-				eprintln!("Failed to authenticate with both hosts. Please check your configuration.");
+				eprintln!("{} Failed to authenticate with both hosts. Please check your configuration.", err);
 				return Err(Error::new(ErrorKind::Other, "Failed to authenticate"));
 			}
 		}
@@ -80,6 +97,8 @@ impl MainApp {
 		self.setup_socket();
 
 		let _ = crossterm::terminal::enable_raw_mode();
+
+		print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
 
 		// draw, get input, redraw with new state, get input, etc.
 		while !self.quit_app {
@@ -355,8 +374,9 @@ impl MainApp {
 											Some(self.compose_body_view.input.to_owned()), None);
 
 										self.messages_view.load_in_conversation(chat);
-
 										self.selected_box = DisplayBox::Messages;
+
+										self.last_selected = Some(0);
 									},
 									_ => if self.input_view.input.len() > 0 {
 										self.handle_full_input();
@@ -508,6 +528,16 @@ impl MainApp {
 			":n" => {
 				self.selected_box = DisplayBox::ComposeAddress;
 				self.messages_view.load_in_conversation("");
+
+				self.compose_body_view.input = "".to_owned();
+				self.address_view.input = "".to_owned();
+
+				if let Some(ls) = self.last_selected {
+					self.chats_view.chats[ls].is_selected = false;
+					self.last_selected = None;
+				}
+
+				self.chats_view.last_height = 0;
 			}
 			":dt" => {
 				if let Some(ls) = self.last_selected {
