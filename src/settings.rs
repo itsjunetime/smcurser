@@ -2,6 +2,7 @@ use crate::*;
 use chrono::prelude::*;
 use serde::Deserialize;
 use notify_rust::Notification;
+use std::io::prelude::*;
 
 #[derive(Deserialize)]
 pub struct Settings {
@@ -105,6 +106,15 @@ impl Settings {
 				.icon("file:///Users/ian/Library/Application Support/smserver/icon.png")
 				.show();
 		}
+	}
+
+	pub fn log(log_str: &str) {
+		let mut file = std::fs::OpenOptions::new()
+			.append(true)
+			.open("log.log")
+			.unwrap();
+			
+		writeln!(file, "{}", log_str);
 	}
 
 	pub fn push_to_req_url(&self, end: String) -> String {

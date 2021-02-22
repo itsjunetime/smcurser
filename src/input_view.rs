@@ -126,6 +126,7 @@ impl InputView {
 
 	pub fn get_typed_attachments(&self, input: String) -> Vec<String> {
 		let bad_chars = [' ', '\t', '"', '\\'];
+		let win_bad_chars = [' ', '\t'];
 
 		let mut files: Vec<String> = Vec::new();
 		let mut in_quotes = false;
@@ -134,6 +135,9 @@ impl InputView {
 
 		for c in input.chars() {
 			if !bad_chars.contains(&c) || escaped || (in_quotes && c != '"') {
+				if cfg!(windows) && escaped && !win_bad_chars.contains(&c) {
+					curr_string.push('\\');
+				}
 				curr_string.push(c);
 				escaped = false;
 			} else {
@@ -264,6 +268,8 @@ impl InputView {
 
 							self.input.truncate(self.input.len() - incomplete.len());
 							self.input = format!("{}{}", self.input, full_path);
+							
+							self.last_width = 0;
 							break;
 						}
 					}
