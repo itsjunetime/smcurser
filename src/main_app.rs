@@ -21,12 +21,12 @@ use tui::{
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 
 pub struct MainApp {
-	last_selected: Option<usize>,
-	selected_box: DisplayBox,
-	quit_app: bool,
-	redraw_all: bool,
-	help_scroll: u16,
-	chats_view: ChatsView,
+	selected_chat: Option<usize>, // index of currently selected conversation in the chats array within the chats view
+	selected_box: DisplayBox, // messages view, chats view, compose address, etc
+	quit_app: bool, // when this is set true, everything quits.
+	redraw_all: bool, // this is set to true with ":r". Allows for redrawing in case there's some weird graphical corruption
+	help_scroll: u16, // how far the help display is scrolled down
+	chats_view: ChatsView, // the different views
 	messages_view: MessagesView,
 	input_view: InputView,
 	address_view: InputView,
@@ -36,13 +36,15 @@ pub struct MainApp {
 impl MainApp {
 	pub fn new() -> MainApp {
 		let mut address_view = InputView::new();
-		address_view.custom_title = Some("| address |".to_owned());
-
 		let mut compose_body_view = InputView::new();
-		compose_body_view.custom_title = Some("| body |".to_owned());
+
+		if let Ok(set) = SETTINGS.read() {
+			address_view.custom_title = Some(set.to_title.to_owned());
+			compose_body_view.custom_title = Some(set.compose_title.to_owned());
+		}
 
 		MainApp {
-			last_selected: None,
+			selected_chat: None,
 			selected_box: DisplayBox::Chats,
 			quit_app: false,
 			redraw_all: false,
@@ -56,6 +58,8 @@ impl MainApp {
 	}
 
 	pub fn main_loop(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Error> {
+
+		// authenticate with the host right off the bat, just so things don't time out later
 		let auth = APICLIENT.authenticate();
 
 		let didnt_auth = if let Err(_) = auth {
@@ -66,6 +70,7 @@ impl MainApp {
 
 		if didnt_auth {
 
+			// make nice error string to print out if authentication failed
 			let err_str = if let Err(e) = auth {
 				e.to_string()
 			} else { "".to_owned() };
@@ -82,22 +87,27 @@ impl MainApp {
 				"".to_owned()
 			};
 
+			// inform user that the authentication failedj
 			eprintln!("{} Failed to authenticate with {} - {}", err, address, err_str);
 			eprintln!("Trying fallback host...");
 			if let Ok(mut set) = SETTINGS.write() {
 				set.host = set.fallback_host.to_owned();
 			}
 
+			// try the authentication again, but now using the fallback host
 			if !APICLIENT.check_auth() {
 				eprintln!("{} Failed to authenticate with both hosts. Please check your configuration.", err);
 				return Err(Error::new(ErrorKind::Other, "Failed to authenticate"));
 			}
 		}
 
+		// set up the connection with the websocket
 		self.setup_socket();
 
+		// necessary to not print every character the user inputs
 		let _ = crossterm::terminal::enable_raw_mode();
 
+		// clears the screen
 		print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
 
 		// draw, get input, redraw with new state, get input, etc.
@@ -107,24 +117,31 @@ impl MainApp {
 			let _ = self.get_input();
 
 			if self.redraw_all {
+				// term.resize forces everything to redraw
 				term.resize(term.size()?)?;
 				self.redraw_all = false;
 			}
 		}
 
+		// make the terminal echo everything input again
 		let _ = crossterm::terminal::disable_raw_mode(); // i just be ignoring results tho
 
 		Ok(())
 	}
 
 	fn setup_socket(&mut self) {
+		// would do an if let Ok() but that would be ugly. this is easier and should never panic
 		let set = SETTINGS.read().unwrap();
 		let host = set.host.as_str().to_owned();
 		let port = set.socket_port;
 		let sec = set.secure;
 		drop(set);
 
+		// need to run websocket in a new thread so that it can do things while main thread is
+		// waiting for input
 		spawn(move || {
+			// need to make this a template so that it can be re-created when the websocket
+			// disconnects
 			let sock_res_template = | | {
 				let config = Some(tungstenite::protocol::WebSocketConfig {
 					max_send_queue: None,
@@ -133,12 +150,14 @@ impl MainApp {
 					accept_unmasked_frames: false
 				});
 
+				// need this custom connector so that it connects with SMServer's self-signed cert
 				let connector = native_tls::TlsConnector::builder()
 					.danger_accept_invalid_certs(true)
 					.danger_accept_invalid_hostnames(true)
 					.build()
 					.unwrap();
 
+				// ngl I don't understand this part perfectly but it was online and it works
 				let mut stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
 				let parsed_url = url::Url::parse(
 					&format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port)
@@ -146,6 +165,7 @@ impl MainApp {
 
 				let mut tls_stream: Option<native_tls::TlsStream<std::net::TcpStream>> = None;
 
+				// gotta do a loop so that it keeps trying to re-connect if it fails initially
 				while tls_stream.is_none() {
 					match stream_try {
 						Ok(stream) => {
@@ -171,19 +191,25 @@ impl MainApp {
 
 			let mut sock_res = sock_res_template();
 
+			// loop until app dies
 			loop {
 				match sock_res {
 					Ok((mut socket, _)) => {
 						loop {
+							// read the incoming message; we don't write to it (yet)
+							// so we don't need to poll
 							let msg = socket.read_message();
 							match msg {
 								Ok(tungstenite::Message::Text(val)) => {
+									// all messages are in the format of `prefix:content`
 									let mut splits = val.splitn(2, ':');
 									let prefix = splits.next().unwrap_or("");
 									let content = splits.next().unwrap_or("");
 
 									match prefix {
 										"text" => {
+											// "text" means that I received a new text. parse it
+											// and put it in STATE as a new text
 											let json: serde_json::Value = serde_json::from_str(&content).unwrap();
 											let text_json: serde_json::Map<String, serde_json::Value> =
 												json["text"].as_object().unwrap().to_owned();
@@ -193,6 +219,8 @@ impl MainApp {
 											}
 										},
 										"typing" => {
+											// "typing" means that someone is typing in a
+											// conversation
 											let typing_text = Message::typing(content);
 
 											if let Ok(mut state) = STATE.write() {
@@ -200,6 +228,8 @@ impl MainApp {
 											}
 										},
 										"idle" => {
+											// "idle" means that someone stopped typing in a
+											// conversation
 											let idle_text = Message::idle(content);
 
 											if let Ok(mut state) = STATE.write() {
@@ -210,6 +240,8 @@ impl MainApp {
 									}
 								},
 								Err(_) => {
+									// if err, it disconnected. Sleep, re-try the connection,
+									// and continue.
 									sleep(Duration::from_secs(2));
 									sock_res = sock_res_template();
 									break;
@@ -219,9 +251,14 @@ impl MainApp {
 						}
 					},
 					Err(ref x) => {
+						// if it initally connected, but is now somehow disconnected.
 						if let Ok(mut state) = STATE.write() {
 							state.hint_msg = format!("Error: Failed to connect to websocket: {} New messages will not show.", x);
 						}
+						// sleep and try again.
+						sleep(Duration::from_secs(2));
+						sock_res = sock_res_template();
+						continue;
 					}
 				};
 			}
@@ -281,12 +318,16 @@ impl MainApp {
 
 					let chats_selected = self.selected_box == DisplayBox::Chats;
 
+					// always draw the chats_view and input_view since it doesn't mattter to them
+					// if the compose display is currently selected
 					self.chats_view.draw_view(f, content_layout[0], chats_selected);
 					self.input_view.draw_view(f, main_layout[1], false);
 
+					// if the compose display is up...
 					if DisplayBox::ComposeAddress == self.selected_box
 						|| DisplayBox::ComposeBody == self.selected_box {
 
+						// set up a new layout
 						let message_layout = Layout::default()
 							.direction(Direction::Vertical)
 							.constraints(
@@ -297,6 +338,8 @@ impl MainApp {
 								].as_ref()
 							).split(content_layout[1]);
 
+						// draw the address view above the messages view, and the body view under
+						// the messages view. The messages view will just be a bit squished.
 						self.address_view.draw_view(f, message_layout[0],
 							self.selected_box == DisplayBox::ComposeAddress);
 						self.messages_view.draw_view(f, message_layout[1], false);
@@ -304,6 +347,7 @@ impl MainApp {
 							self.selected_box == DisplayBox::ComposeBody);
 
 					} else {
+						// if it's not, just draw the messages view like normal
 						self.messages_view.draw_view(f, content_layout[1], !chats_selected);
 					}
 
@@ -337,22 +381,25 @@ impl MainApp {
 				} else { false };
 
 				if has_unread {
-					if let Ok(mut state) = STATE.write() {
+					let none_text = if let Ok(mut state) = STATE.write() {
 						// swap the new text out for `None`
 						let mut none_text: Option<Message> = None;
 						std::mem::swap(&mut none_text, &mut state.new_text);
+						none_text
+					} else { None };
 
-						// send the new text to the load in function
-						if let Some(txt) = none_text {
-							self.load_in_text(txt);
-						}
-						break;
+					// send the new text to the load in function
+					if let Some(txt) = none_text {
+						self.load_in_text(txt);
 					}
+					break;
 				}
 			} else {
 				match read()? {
 					Event::Key(event) => {
 						match event.code {
+							// each view treats these keycodes the same, so just route it through 
+							// the correct one.
 							KeyCode::Backspace | KeyCode::Tab | KeyCode::Esc => {
 								match self.selected_box {
 									DisplayBox::ComposeBody => self.compose_body_view.route_keycode(event.code),
@@ -364,19 +411,38 @@ impl MainApp {
 							KeyCode::Enter => {
 								match self.selected_box {
 									DisplayBox::ComposeAddress => {
+										// just moves the focus from the compose address box to the
+										// body box; loads in the messages to the messages_view
+										// just like in the real iMessage app.
 										self.selected_box = DisplayBox::ComposeBody;
 										self.messages_view.load_in_conversation(&self.address_view.input);
 									},
 									DisplayBox::ComposeBody => {
 										let chat = &self.address_view.input;
 
+										// if you hit enter when you're already in the compose
+										// body, just send it.
 										self.send_text(Some(chat.to_owned()),
 											Some(self.compose_body_view.input.to_owned()), None);
 
-										self.messages_view.load_in_conversation(chat);
+										//self.messages_view.load_in_conversation(chat);
 										self.selected_box = DisplayBox::Messages;
 
-										self.last_selected = Some(0);
+										//self.selected_chat = Some(0);
+
+										// this `awaiting_new_convo` thing is a kinda hacky
+										// workaround. Basically, I set it to true whenever someone
+										// sends a text from this compose menu, and then whenever a
+										// new text comes in through the websocket, it checks if
+										// awaiting_new_convo is true.
+										//
+										// If it is true, it automatically loads in the first
+										// conversation in the list, and doesn't display the new
+										// text that came in (since it will be loaded in with the
+										// conversation).
+										if let Ok(mut state) = STATE.write() {
+											state.awaiting_new_convo = true;
+										}
 									},
 									_ => if self.input_view.input.len() > 0 {
 										self.handle_full_input();
@@ -387,14 +453,17 @@ impl MainApp {
 							// just switch which box is selected
 							KeyCode::Left | KeyCode::Right => {
 								let right = event.code == KeyCode::Right;
-								let dist: u16 = distance.parse().unwrap_or(1);
 
+								// just scroll the cursor in the input view by one. Technically
+								// supports scrolling more than one but that's not possible since
+								// you can't specify how much to scroll
 								match self.selected_box {
-									DisplayBox::ComposeAddress => self.address_view.scroll(right, dist),
-									DisplayBox::ComposeBody => self.compose_body_view.scroll(right, dist),
+									DisplayBox::ComposeAddress => self.address_view.scroll(right, 1),
+									DisplayBox::ComposeBody => self.compose_body_view.scroll(right, 1),
 									_ => if self.input_view.input.len() > 0 {
-										self.input_view.scroll(event.code == KeyCode::Right, dist);
+										self.input_view.scroll(event.code == KeyCode::Right, 1);
 									} else {
+										// if there's no input, just switch the selected box
 										self.switch_selected_box();
 									},
 								}
@@ -402,6 +471,7 @@ impl MainApp {
 							KeyCode::Up | KeyCode::Down => if self.selected_box != DisplayBox::ComposeBody
 								&& self.selected_box != DisplayBox::ComposeAddress {
 
+								// tab up/down to more recent/less recent executed command
 								self.input_view.change_command(event.code == KeyCode::Up);
 							},
 							// ctrl+c gets hijacked by crossterm, so I wanted to manually add in a way
@@ -452,6 +522,9 @@ impl MainApp {
 	}
 
 	fn handle_input_char(&mut self, ch: char, distance: u16) {
+		// handle single character that is not a control key
+		// this is only executed if the selected view is not the compose address view
+		// and not the compose body view
 		if self.input_view.input.len() > 0 || ch == ':' {
 			self.input_view.append_char(ch);
 		} else {
@@ -463,7 +536,7 @@ impl MainApp {
 				},
 				// scroll up or down in the selected box
 				'k' | 'j' => self.scroll(ch == 'k', distance),
-				// will add more later
+				// will add more later maybe
 				_ => return,
 			}
 		}
@@ -532,15 +605,15 @@ impl MainApp {
 				self.compose_body_view.input = "".to_owned();
 				self.address_view.input = "".to_owned();
 
-				if let Some(ls) = self.last_selected {
+				if let Some(ls) = self.selected_chat {
 					self.chats_view.chats[ls].is_selected = false;
-					self.last_selected = None;
+					self.selected_chat = None;
 				}
 
 				self.chats_view.last_height = 0;
 			}
 			":dt" => {
-				if let Some(ls) = self.last_selected {
+				if let Some(ls) = self.selected_chat {
 					let chat = &self.chats_view.chats[ls].chat_identifier;
 
 					if self.messages_view.delete_current_text() {
@@ -571,7 +644,7 @@ impl MainApp {
 						}
 					}
 
-				} else if let Some(ls) = self.last_selected {
+				} else if let Some(ls) = self.selected_chat {
 					let chat = self.chats_view.chats[ls].chat_identifier.as_str();
 
 					if let Ok(mut state) = STATE.write() {
@@ -622,9 +695,11 @@ impl MainApp {
 			self.chats_view.load_in_conversation(idx);
 			let id = self.chats_view.chats[idx].chat_identifier.as_str().to_string();
 
+			Settings::log(&format!("loading in convo: {}", id));
+
 			self.messages_view.load_in_conversation(&id);
 
-			self.last_selected = Some(idx);
+			self.selected_chat = Some(idx);
 
 			if let Ok(mut state) = STATE.write() {
 				state.current_chat = Some(id);
@@ -636,23 +711,42 @@ impl MainApp {
 	}
 
 	fn load_in_text(&mut self, text: Message) {
-		// new_text returns the previous index of the conversation in which the new text was
-		// sent. We can use it to determine how to shift self.last_selected
 		match text.message_type {
 			MessageType::Normal => {
+				// new_text returns the previous index of the conversation in which the new text was
+				// sent. We can use it to determine how to shift self.selected_chat
 				let past = self.chats_view.new_text(&text);
 				let name = text.sender.as_ref().unwrap_or(
-					text.chat_identifier.as_ref().unwrap()).to_owned();
+						&APICLIENT.get_name(text.chat_identifier.as_ref().unwrap())
+					)
+					.to_owned();
+
 				let text_content = text.text.to_owned();
 				let show_notif = !text.is_from_me;
 
+				Settings::log("checking load in");
+
+				let load_in = if let Ok(state) = STATE.read() {
+					state.awaiting_new_convo
+				} else { false };
+
+				if load_in {
+					Settings::log("got to load_in");
+
+					self.load_in_conversation(0);
+
+					if let Ok(mut state) = STATE.write() {
+						state.awaiting_new_convo = false;
+					}
+				}
+
 				if let Some(idx) = past {
-					if let Some(ls) = self.last_selected {
-						if idx == ls {
-							self.last_selected = Some(0);
+					if let Some(ls) = self.selected_chat {
+						if idx == ls && !load_in {
+							self.selected_chat = Some(0);
 							self.messages_view.new_text(text);
 						} else if idx > ls {
-							self.last_selected = Some(ls + 1);
+							self.selected_chat = Some(ls + 1);
 						}
 					}
 				}
@@ -666,7 +760,7 @@ impl MainApp {
 					let name = text.sender.as_ref().unwrap_or(
 						id).to_owned();
 
-					if let Some(ls) = self.last_selected {
+					if let Some(ls) = self.selected_chat {
 						if id == self.chats_view.chats[ls].chat_identifier.as_str() {
 							if let MessageType::Idle = text.message_type {
 								self.messages_view.set_idle();
@@ -686,7 +780,7 @@ impl MainApp {
 		let chat_option = match chat_id {
 			Some(ch) => Some(ch),
 			None => {
-				match self.last_selected {
+				match self.selected_chat {
 					Some(sel) => Some(self.chats_view.chats[sel]
 						.chat_identifier.to_owned()),
 					None => None,

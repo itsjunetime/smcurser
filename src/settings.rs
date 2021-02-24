@@ -38,8 +38,8 @@ impl Settings {
 			let mut config_dir = dirs::config_dir()
 				.expect("Cannot detect your system's configuration directory. Please file an issue with the maintainer");
 
-			config_dir.push("smserver");
-			config_dir.push("smserver");
+			config_dir.push("smcurser");
+			config_dir.push("smcurser");
 			config_dir.set_extension("toml");
 
 			config_dir.into_os_string().into_string().unwrap_or("".to_owned())
@@ -92,29 +92,29 @@ impl Settings {
 
 		if notify {
 			let mut image_dir = dirs::config_dir().expect("Could not get configuration dir. Please report this to  the maintainer.");
-			image_dir.push("smserver");
+			image_dir.push("smcurser");
 			image_dir.push("icon.png");
 
 			let image_str = format!("file://{}",
 				image_dir.into_os_string().into_string().unwrap_or("".to_owned()));
 
 			let _ = Notification::new()
-				.appname("SMServer")
+				.appname("SMCurser")
 				.summary(title)
 				.body(msg)
 				.icon(&image_str)
-				.icon("file:///Users/ian/Library/Application Support/smserver/icon.png")
 				.show();
 		}
 	}
 
+	#[allow(dead_code)]
 	pub fn log(log_str: &str) {
 		let mut file = std::fs::OpenOptions::new()
 			.append(true)
 			.open("log.log")
 			.unwrap();
 			
-		writeln!(file, "{}", log_str);
+		let _ = writeln!(file, "{}", log_str);
 	}
 
 	pub fn push_to_req_url(&self, end: String) -> String {
