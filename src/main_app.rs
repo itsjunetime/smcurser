@@ -543,61 +543,68 @@ impl MainApp {
 	}
 
 	fn handle_full_input(&mut self) {
+		// add the command that it's handling to the most recent commands so you can tab up to it
 		self.input_view.last_commands
 			.insert(0, self.input_view.input.as_str().to_owned());
 
+		// cmd is the first bit before a space, e.g. the ':s' in ':s hey friend'
 		let mut splits = self.input_view.input.split(' ').collect::<Vec<&str>>();
 		let cmd = splits.drain(0..1).as_slice()[0];
+
 		match cmd.to_lowercase().as_str() {
+			// quit the app
 			":q" => self.quit_app = true,
-			":c" => {
-				if splits.len() > 0 {
-					let index = splits[0].parse::<usize>();
-					match index {
-						Ok(idx) => self.load_in_conversation(idx),
-						Err(_) => {
-							if let Ok(mut state) = STATE.write() {
-								state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
-							}
-						}
-					}
-				} else if let Ok(mut state) = STATE.write() {
-					state.hint_msg = "Please insert an index".to_string();
+			// select a chat
+			":c" => if splits.len() > 0 {
+				let index = splits[0].parse::<usize>();
+				match index {
+					Ok(idx) => self.load_in_conversation(idx),
+					Err(_) => if let Ok(mut state) = STATE.write() {
+						state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
+					},
 				}
+			} else if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "Please insert an index".to_string();
 			},
+			// show help
 			":h" => self.selected_box = DisplayBox::Help,
+			// send a text
 			":s" => {
 				let cmd = splits.join(" ");
 				self.send_text(None, Some(cmd), None);
 			},
+			// reload the chats and redraw anything in case of graphical inconsistencies
 			":r" => {
 				self.redraw_all = true;
 				self.chats_view.reload_chats();
 			},
+			// modify settings (b for bind)
 			":b" => {
 				let ops = splits.iter().map(|o| o.to_string()).collect::<Vec<String>>();
 				self.bind_var(ops);
 			},
-			":a" => {
-				if splits.len() > 0 {
-					let index = splits[0].parse::<usize>();
-					match index {
-						Ok(idx) => self.messages_view.open_attachment(idx),
-						Err(_) => {
-							if let Ok(mut state) = STATE.write() {
-								state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
-							}
+			// open an attachment by index
+			":a" => if splits.len() > 0 {
+				let index = splits[0].parse::<usize>();
+				match index {
+					Ok(idx) => self.messages_view.open_attachment(idx),
+					Err(_) => {
+						if let Ok(mut state) = STATE.write() {
+							state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
 						}
 					}
-				} else if let Ok(mut state) = STATE.write() {
-					state.hint_msg = "Please insert an index".to_string();
 				}
+			} else if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "Please insert an index".to_string();
 			},
+			// send files
 			":f" => self.send_attachments(splits),
+			// send a tapback
 			":t" => {
 				let tapback = splits.join("");
 				self.send_tapback(&tapback);
 			},
+			// start a new composition
 			":n" => {
 				self.selected_box = DisplayBox::ComposeAddress;
 				self.messages_view.load_in_conversation("");
@@ -612,6 +619,7 @@ impl MainApp {
 
 				self.chats_view.last_height = 0;
 			}
+			// delete a text
 			":dt" => {
 				if let Some(ls) = self.selected_chat {
 					let chat = &self.chats_view.chats[ls].chat_identifier;
@@ -622,36 +630,42 @@ impl MainApp {
 					}
 				}
 			},
-			":dc" => {
-				if splits.len() > 0 {
-					let chat = splits[0];
-					let del_str = if let Ok(set) = SETTINGS.read() {
-						set.delete_chat_string(&chat)
-					} else { "".to_owned() };
+			// delete a conversation
+			":dc" => if splits.len() > 0 {
+				// this is if they specified a conversation to delete
+				let chat = splits[0];
 
-					if del_str.len() > 0 {
-						match APICLIENT.get_url_string(&del_str) {
-							Err(err) => if let Ok(mut state) = STATE.write() {
-								state.hint_msg = format!("Failed to delete conversation: {}", err);
-							},
-							Ok(_) => {
-								if let Ok(mut state) = STATE.write() {
-									state.hint_msg = format!("deleted conversation :)");
-								}
+				// get the url to talk to to delete this conversation
+				let del_str = if let Ok(set) = SETTINGS.read() {
+					set.delete_chat_string(&chat)
+				} else { "".to_owned() };
 
-								self.chats_view.reload_chats();
-							},
-						}
-					}
+				if del_str.len() > 0 {
+					// send the request
+					match APICLIENT.get_url_string(&del_str) {
+						Err(err) => if let Ok(mut state) = STATE.write() {
+							state.hint_msg = format!("Failed to delete conversation: {}", err);
+						},
+						Ok(_) => {
+							if let Ok(mut state) = STATE.write() {
+								state.hint_msg = format!("deleted conversation :)");
+							}
 
-				} else if let Some(ls) = self.selected_chat {
-					let chat = self.chats_view.chats[ls].chat_identifier.as_str();
-
-					if let Ok(mut state) = STATE.write() {
-						state.hint_msg = format!("Please enter ':dc {}' if you'd like to delete this conversation", chat);
+							// reload chats so that it doesn't show up anymore
+							self.chats_view.reload_chats();
+						},
 					}
 				}
+
+			} else if let Some(ls) = self.selected_chat {
+				// if they didn't specify a conversation, let them know how to delete this conversation
+				let chat = &self.chats_view.chats[ls].chat_identifier;
+
+				if let Ok(mut state) = STATE.write() {
+					state.hint_msg = format!("Please enter ':dc {}' if you'd like to delete this conversation", chat);
+				}
 			},
+			// default
 			x => {
 				if let Ok(mut state) = STATE.write() {
 					state.hint_msg = format!("Command {} not recognized", x);
@@ -663,6 +677,7 @@ impl MainApp {
 	}
 
 	fn switch_selected_box(&mut self) {
+		// switches only between chats and messages
 		if let DisplayBox::Chats = self.selected_box {
 			self.selected_box = DisplayBox::Messages;
 		} else if let DisplayBox::Messages = self.selected_box {
@@ -671,10 +686,12 @@ impl MainApp {
 	}
 
 	fn scroll(&mut self, up: bool, distance: u16) {
+		// scrolls, depending on what the selected box is
 		match self.selected_box {
 			DisplayBox::Chats => self.chats_view.scroll(up, distance),
 			DisplayBox::Messages => self.messages_view.scroll(up, distance),
 			DisplayBox::Help => {
+				// these comparisons are to ensure it doesn't scroll too far
 				if up {
 					self.help_scroll = std::cmp::max(self.help_scroll as i32 - distance as i32, 0) as u16;
 				} else {
@@ -682,6 +699,7 @@ impl MainApp {
 				}
 			},
 			_ => {
+				// this shouldn't ever be called
 				if let Ok(mut state) = STATE.write() {
 					state.hint_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
 				}
@@ -692,11 +710,11 @@ impl MainApp {
 	fn load_in_conversation(&mut self, idx: usize) {
 		// ensure that it's in range
 		if idx < self.chats_view.chats.len() {
+			// first tell the chats view to load it in
 			self.chats_view.load_in_conversation(idx);
-			let id = self.chats_view.chats[idx].chat_identifier.as_str().to_string();
+			let id = self.chats_view.chats[idx].chat_identifier.to_owned();
 
-			Settings::log(&format!("loading in convo: {}", id));
-
+			// then you can send it to the messages view
 			self.messages_view.load_in_conversation(&id);
 
 			self.selected_chat = Some(idx);
@@ -722,17 +740,23 @@ impl MainApp {
 					.to_owned();
 
 				let text_content = text.text.to_owned();
-				let show_notif = !text.is_from_me;
 
-				Settings::log("checking load in");
+				// only show notification if it's not from me && they want notifications
+				let show_notif = if let Ok(set) = SETTINGS.read() {
+					set.notifications && !text.is_from_me
+				} else {
+					!text.is_from_me
+				};
 
+				// load_in will be true if I just composed and sent a conversation. It's a kinda
+				// hacky workaround to prevent text duplication when creating a new conversation
+				// from SMCurser
 				let load_in = if let Ok(state) = STATE.read() {
 					state.awaiting_new_convo
 				} else { false };
 
+				// If we did just compose and send a converation, load in the top conversation.
 				if load_in {
-					Settings::log("got to load_in");
-
 					self.load_in_conversation(0);
 
 					if let Ok(mut state) = STATE.write() {
@@ -740,12 +764,26 @@ impl MainApp {
 					}
 				}
 
+				// idx == the previous index of the conversation in which the new text was sent
+				// (since the conversation was automatically moved up to the top, index 0) if that
+				// conversation did exist before now
 				if let Some(idx) = past {
 					if let Some(ls) = self.selected_chat {
+						// so if that conversation did exist, and we previously had a conversation
+						// selected...
+
+						// only load in the new text to the messages_view if it's not a
+						// conversation we just created
 						if idx == ls && !load_in {
+
 							self.selected_chat = Some(0);
 							self.messages_view.new_text(text);
+
 						} else if idx > ls {
+							// increase the index of our currently selected chat if the old index
+							// is above it, since it moving down to index 0 will offset everything
+							// under it
+
 							self.selected_chat = Some(ls + 1);
 						}
 					}
@@ -756,46 +794,44 @@ impl MainApp {
 				}
 			},
 			MessageType::Typing | MessageType::Idle => {
-				if let Some(ref id) = text.chat_identifier {
-					let name = text.sender.as_ref().unwrap_or(
-						id).to_owned();
+				// the new message could also be a typing or idle message
 
+				if let Some(ref id) = text.chat_identifier {
+					// need to grab name now 'cause `text` is moved into messages_view
+					let name = text.sender.as_ref().unwrap_or(id).to_owned();
+					Settings::show_notification(&name, &format!("{} is typing...", name));
+
+					// if we have selected a chat...
 					if let Some(ls) = self.selected_chat {
+						// and it matches the identifier in the new message...
 						if id == self.chats_view.chats[ls].chat_identifier.as_str() {
-							if let MessageType::Idle = text.message_type {
+							if text.message_type == MessageType::Idle {
 								self.messages_view.set_idle();
 							} else {
 								self.messages_view.set_typing(text);
 							}
 						}
 					}
-
-					Settings::show_notification(&name, &format!("{} is typing...", name));
 				}
 			},
 		}
 	}
 
 	fn send_text(&self, chat_id: Option<String>, text: Option<String>, files: Option<Vec<String>>) {
+		// make chat_id an option so that it can be manually specified for when you're making a new
+		// conversation, or omitted, when you're sending a text in the current chat
 		let chat_option = match chat_id {
 			Some(ch) => Some(ch),
-			None => {
-				match self.selected_chat {
-					Some(sel) => Some(self.chats_view.chats[sel]
-						.chat_identifier.to_owned()),
-					None => None,
-				}
+			None => match self.selected_chat {
+				Some(sel) => Some(self.chats_view.chats[sel]
+					.chat_identifier.to_owned()),
+				None => None,
 			}
 		};
 
+		// only send it if you have a chat
 		if let Some(id) = chat_option {
-			let in_files = if let Some(fil) = files {
-				fil
-			} else {
-				Vec::new()
-			};
-
-			let sent = APICLIENT.send_text(text, None, id, Some(in_files), None);
+			let sent = APICLIENT.send_text(text, None, id, files, None);
 
 			if let Ok(mut state) = STATE.write() {
 				state.hint_msg = (if sent {
@@ -810,12 +846,16 @@ impl MainApp {
 	fn send_attachments(&self, files: Vec<&str>) {
 		let orig = files.join(" ");
 
+		// this retuns a vector of strings, each string specifying the path of a file to be sent
 		let files_to_send = self.input_view.get_typed_attachments(orig);
 
 		self.send_text(None, None, Some(files_to_send));
 	}
 
 	fn bind_var(&mut self, ops: Vec<String>) {
+		// set a variable in settings
+
+		// you have to have the name of the variable to change, and the value to change it to
 		if ops.len() < 2 {
 			if let Ok(mut state) = STATE.write() {
 				state.hint_msg = "Please enter at least a variable name and value".to_string();
@@ -824,7 +864,10 @@ impl MainApp {
 		}
 
 		let mut new_ops = ops;
+		// val = all but the first element of `ops`
 		let val = new_ops.split_off(1);
+		// add back val, but joined with spaces. So that you could do a command like
+		// `:b input_title this is a title`
 		new_ops.push(val.join(" "));
 
 		if let Ok(mut set) = SETTINGS.write() {
@@ -836,9 +879,12 @@ impl MainApp {
 		let msgs = ["love", "like", "dislike", "laugh", "emphasize", "question"];
 		let guid = &self.messages_view.messages[self.messages_view.selected_msg as usize].guid;
 
+		// ensure that the tapback type that they specified is in the options
 		if let Some(idx) = msgs.iter().position(|c| *c == tap) {
-			if let Some(_) = self.chats_view.last_selected {
+			// ensure that we've actually selected a conversation
+			if !self.chats_view.last_selected.is_none() {
 
+				// get the url and send it!
 				let tap_url = SETTINGS.read().unwrap()
 					.tapback_send_string(idx as i8, &guid, None);
 

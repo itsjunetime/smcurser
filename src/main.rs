@@ -18,17 +18,19 @@ use tui::{Terminal, backend::CrosstermBackend};
 use std::io;
 
 lazy_static! {
+	// set global variables. I know they're theoretically bad practice, but I've yet to find an
+	// easier way of managing global state.
 	static ref SETTINGS: Arc<RwLock<Settings>> = Arc::new(RwLock::new(Settings::default()));
 	static ref APICLIENT: APIClient = APIClient::new();
 	static ref STATE: Arc<RwLock<GlobalState>> = Arc::new(RwLock::new(GlobalState::new()));
 }
 
 fn main() -> Result<(), io::Error> {
-	// clears screen
 	let mut args = std::env::args().collect::<Vec<String>>();
 	args.remove(0);
 	parse_args(args);
 
+	// if they want help, just show that and do nothing else.
 	if let Ok(set) = SETTINGS.read() {
 		if set.show_help {
 			for s in CMD_HELP.iter() {
@@ -38,6 +40,7 @@ fn main() -> Result<(), io::Error> {
 		}
 	}
 
+	// if they have specified no host, then exit (since you need a host to communicate with)
 	if let Ok(set) = SETTINGS.read() {
 		if set.host.len() == 0 {
 			eprintln!("\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to");
@@ -49,6 +52,7 @@ fn main() -> Result<(), io::Error> {
 	let backend = CrosstermBackend::new(stdout);
 	let mut terminal = Terminal::new(backend)?;
 
+	// go!
 	let mut main_app = MainApp::new();
 	main_app.main_loop(&mut terminal)
 }

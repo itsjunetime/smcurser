@@ -110,6 +110,7 @@ impl Settings {
 	#[allow(dead_code)]
 	pub fn log(log_str: &str) {
 		let mut file = std::fs::OpenOptions::new()
+			.create(true)
 			.append(true)
 			.open("log.log")
 			.unwrap();

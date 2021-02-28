@@ -16,6 +16,7 @@ pub struct Colorscheme {
 
 impl<T: Into<String>> From<T> for Colorscheme {
 	fn from(val: T) -> Self {
+		// yeahhh... ugly. Whatcha gonna do
 		match val.into().as_str() {
 			"forest" => Colorscheme {
 				selected_box: Color::Rgb(36, 139, 84),

@@ -155,6 +155,7 @@ impl fmt::Debug for Message {
 	}
 }
 
+#[derive(PartialEq)]
 pub enum MessageType {
 	Normal,
 	Typing,

@@ -12,12 +12,14 @@ pub struct APIClient {
 
 impl APIClient {
 	pub fn new() -> APIClient {
+		// these specific things are to make sure that the client can connect with SMServer, since
+		// it uses a self-signed cert and normally connects with an IP Address, not hostname
 		let tls = native_tls::TlsConnector::builder()
 			.use_sni(false)
 			.danger_accept_invalid_certs(true)
 			.danger_accept_invalid_hostnames(true)
 			.build()
-			.expect("Unable to build TlsConnector; panicking");
+			.expect("Unable to build TlsConnector");
 
 		let timeout = if let Ok(set) = SETTINGS.read() {
 			set.timeout
@@ -29,7 +31,7 @@ impl APIClient {
 			.use_preconfigured_tls(tls)
 			.connect_timeout(std::time::Duration::from_secs(timeout as u64))
 			.build()
-			.expect("Unable to build API Client; panicking");
+			.expect("Unable to build API Client");
 
 		APIClient { client }
 	}
@@ -41,6 +43,7 @@ impl APIClient {
 	}
 
 	pub fn authenticate(&self) -> Result<bool, reqwest::Error> {
+		// authenticate with SMServer so that we can make more requests later without being denied
 		let url = SETTINGS.read().expect("Cannot read settings")
 			.pass_req_string(None);
 		let res = self.get_url_string(&url)?;
@@ -48,6 +51,8 @@ impl APIClient {
 		match res.parse().unwrap_or_else(|_| false) {
 			true => {
 				if let Ok(mut set) = SETTINGS.write() {
+					// set this so that we don't manually authenticate before every request to
+					// ensure we have access
 					set.authenticated = true;
 				}
 				Ok(true)
@@ -76,12 +81,16 @@ impl APIClient {
 		let response = self.get_url_string(&req_str)
 			.unwrap_or("".to_owned());
 
+		// if we can't parse the JSON from this, something is majorly off.
 		let json: serde_json::Value = serde_json::from_str(&response).expect("Bad JSON :(");
 		let mut ret_vec = Vec::new();
 
+		// so ngl I don't quite understand how ownership works with relation to serde_json so this
+		// is kind of a mess. It functions for my purposes tho
 		let obj = json.as_object().unwrap();
 		let chats = &obj["chats"];
 		let json_vec = chats.as_array().unwrap();
+
 		for value in json_vec {
 			let val = value.as_object().unwrap();
 			ret_vec.push(Conversation::from_json(val));
@@ -93,6 +102,7 @@ impl APIClient {
 	pub fn get_texts(
 		&self, chat: String, num: Option<i64>, offset: Option<i64>, read: Option<bool>, from: Option<i8>
 	) -> Vec<Message> {
+		// get the texts for a specific conversation from SMServer
 		if !self.check_auth() { return Vec::new(); }
 
 		let req_str = SETTINGS.read().unwrap().msg_req_string(chat, num, offset, read, from);
@@ -113,6 +123,7 @@ impl APIClient {
 	}
 
 	pub fn get_name(&self, chat_id: &str) -> String {
+		// get the name that corresponds with a specific chat_id from SMServer
 		if !self.check_auth() { return "".to_owned(); }
 
 		let req_str = SETTINGS.read().expect("Unable to read settings")
@@ -124,19 +135,24 @@ impl APIClient {
 	pub fn send_text(
 		&self, body: Option<String>, subject: Option<String>, chat_id: String, files: Option<Vec<String>>, photos: Option<String>
 	) -> bool {
+		// send a text through SMServer
 		if !self.check_auth() { return false; }
 
 		let req_str = SETTINGS.read().unwrap().text_send_string();
 		let mut unfound_files = Vec::new();
 
+		// create the multipart form that is POSTed to SMServer to send the text
 		let form: reqwest::blocking::multipart::Form =
 			if let Some(fil) = files {
 				fil.iter().fold(
 					reqwest::blocking::multipart::Form::new(),
 					| fold_form, file | {
 						if Path::new(file).exists() {
+							// if it exists, append it to the form
 							fold_form.file("attachments", file).unwrap()
 						} else {
+							// this array will be used later to notify the user of what files
+							// couldn't be found to send.
 							unfound_files.push(file.as_str().to_owned());
 							fold_form
 						}
@@ -148,7 +164,12 @@ impl APIClient {
 			.text("text", body.unwrap_or("".to_owned()))
 			.text("subject", subject.unwrap_or("".to_owned()))
 			.text("photos", photos.unwrap_or("".to_owned()));
+		// ideally, I wouldn't add the `text`, `subject`, and `photos` fields unless they were
+		// Some, but I can't find a way to do that with this API. So SMServer just ignores
+		// parameters that are empty.
 
+		// let them know about the files that couldn't be found in the filesystem.
+		// maybe I should have a configuration option to not send a text unless every file is found
 		if unfound_files.len() > 0 {
 			if let Ok(mut state) = STATE.write() {
 				state.hint_msg = format!("Could not find the following files to send: {}", unfound_files.join(", "));
