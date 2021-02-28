@@ -126,7 +126,7 @@ impl MessagesView {
 				Vec::new(), |mut vec, (i, msg)| {
 					// check, add time display if necessary
 					if msg.date - last_timestamp >= 3600000000000 {
-						let date_pad = Settings::date_pad_string(msg.date, msg_width);
+						let date_pad = utilities::Utilities::date_pad_string(msg.date, msg_width);
 						let mut spans = vec![
 							MessageLine::blank(i),
 							MessageLine::new(date_pad.to_string(), MessageLineType::TimeDisplay, i, msg.is_from_me),
@@ -327,7 +327,7 @@ impl MessagesView {
 
 		// show the time display
 		if msg.date - last_timestamp >= 3600000000000 {
-			let date_pad = Settings::date_pad_string(msg.date, self.last_width as usize - 2);
+			let date_pad = utilities::Utilities::date_pad_string(msg.date, self.last_width as usize - 2);
 			let mut spans = vec![
 				MessageLine::blank(i),
 				MessageLine::new(date_pad, MessageLineType::Text, i, msg.is_from_me),

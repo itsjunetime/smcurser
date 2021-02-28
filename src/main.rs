@@ -7,6 +7,7 @@ mod chats_view;
 mod messages_view;
 mod input_view;
 mod state;
+mod utilities;
 
 use std::sync::{Arc, RwLock};
 use lazy_static::*;

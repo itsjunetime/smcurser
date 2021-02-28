@@ -14,11 +14,11 @@ impl Conversation {
 	pub fn from_json(val: &serde_json::Map<String, serde_json::Value>) -> Conversation {
 		// it's so ugly :(
 		Conversation {
-			display_name: val["display_name"].as_str().unwrap().to_owned(),
-			chat_identifier: val["chat_identifier"].as_str().unwrap().to_owned(),
-			latest_text: val["latest_text"].as_str().unwrap().to_owned(),
-			has_unread: val["has_unread"].as_bool().unwrap(),
-			addresses: val["addresses"].as_str().unwrap().to_owned().to_owned(),
+			display_name: val["display_name"].as_str().unwrap_or("Name").to_owned(),
+			chat_identifier: val["chat_identifier"].as_str().unwrap_or("").to_owned(),
+			latest_text: val["latest_text"].as_str().unwrap_or("").to_owned(),
+			has_unread: val["has_unread"].as_bool().unwrap_or(false),
+			addresses: val["addresses"].as_str().unwrap_or("").to_owned(),
 			is_selected: false,
 		}
 	}
@@ -57,16 +57,16 @@ pub struct Message {
 impl Message {
 	pub fn from_json(val: &serde_json::Map<String, serde_json::Value>) -> Message {
 		Message {
-			guid: val["guid"].as_str().unwrap().to_owned(),
-			date: val["date"].as_i64().unwrap(),
-			balloon_bundle_id: val["balloon_bundle_id"].as_str().unwrap().to_owned(),
-			cache_has_attachments: val["cache_has_attachments"].as_bool().unwrap(),
-			imsg: val["service"].as_str().unwrap() == "iMessage",
-			is_from_me: val["is_from_me"].as_bool().unwrap(),
-			subject: val["subject"].as_str().unwrap().to_owned(),
-			text: val["text"].as_str().unwrap().to_owned(),
-			associated_message_guid: val["associated_message_guid"].as_str().unwrap().to_owned(),
-			associated_message_type: val["associated_message_type"].as_i64().unwrap() as i16,
+			guid: val["guid"].as_str().unwrap_or("").to_owned(),
+			date: val["date"].as_i64().unwrap_or(0),
+			balloon_bundle_id: val["balloon_bundle_id"].as_str().unwrap_or("").to_owned(),
+			cache_has_attachments: val["cache_has_attachments"].as_bool().unwrap_or(false),
+			imsg: val["service"].as_str().unwrap_or("") == "iMessage",
+			is_from_me: val["is_from_me"].as_bool().unwrap_or(false),
+			subject: val["subject"].as_str().unwrap_or("").to_owned(),
+			text: val["text"].as_str().unwrap_or("").to_owned(),
+			associated_message_guid: val["associated_message_guid"].as_str().unwrap_or("").to_owned(),
+			associated_message_type: val["associated_message_type"].as_i64().unwrap_or(0) as i16,
 			message_type: MessageType::Normal,
 			attachments: if val.contains_key("attachments") {
 				val["attachments"].as_array()
@@ -78,17 +78,17 @@ impl Message {
 				Vec::new()
 			},
 			date_read: if val.contains_key("date_read") {
-				val["date_read"].as_i64().unwrap()
+				val["date_read"].as_i64().unwrap_or(0)
 			} else {
 				0
 			},
 			sender: if val.contains_key("sender") {
-				Some(val["sender"].as_str().unwrap().to_owned())
+				Some(val["sender"].as_str().unwrap_or("").to_owned())
 			} else {
 				None
 			},
 			chat_identifier: if val.contains_key("chat_identifier") {
-				Some(val["chat_identifier"].as_str().unwrap().to_owned())
+				Some(val["chat_identifier"].as_str().unwrap_or("").to_owned())
 			} else {
 				None
 			},
@@ -170,8 +170,8 @@ pub struct Attachment {
 impl Attachment {
 	pub fn from_json(val: &serde_json::Map<String, serde_json::Value>) -> Attachment {
 		Attachment {
-			mime_type: val["mime_type"].as_str().unwrap().to_owned(),
-			path: val["filename"].as_str().unwrap().to_owned(),
+			mime_type: val["mime_type"].as_str().unwrap_or("image/jpeg").to_owned(),
+			path: val["filename"].as_str().unwrap_or("file.jpg").to_owned(),
 		}
 	}
 }

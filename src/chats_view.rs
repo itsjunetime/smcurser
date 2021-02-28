@@ -49,7 +49,7 @@ impl ChatsView {
 			let item_list: Vec<Spans> = self.chats_list.iter()
 				.fold(Vec::new(), |mut s, c| {
 					let (num, rest) = c.split_at(4); // that's where the symbol will be
-					let symbol = rest.chars().nth(0).unwrap();
+					let symbol = rest.chars().nth(0).unwrap_or(' ');
 
 					// conditionally color the symbol and create its span
 					let spans = vec![

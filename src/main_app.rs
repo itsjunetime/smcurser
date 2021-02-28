@@ -5,6 +5,7 @@ use crate::{
 	messages_view::*,
 	input_view::*,
 	colorscheme::*,
+	utilities::*,
 };
 use std::{
 	vec::Vec,
@@ -62,11 +63,10 @@ impl MainApp {
 		// authenticate with the host right off the bat, just so things don't time out later
 		let auth = APICLIENT.authenticate();
 
-		let didnt_auth = if let Err(_) = auth {
-			true
-		} else if let Ok(b) = auth {
-			!b
-		} else { true };
+		let didnt_auth = match auth {
+			Err(_) => true,
+			Ok(b) => !b
+		};
 
 		if didnt_auth {
 
@@ -131,7 +131,7 @@ impl MainApp {
 
 	fn setup_socket(&mut self) {
 		// would do an if let Ok() but that would be ugly. this is easier and should never panic
-		let set = SETTINGS.read().unwrap();
+		let set = SETTINGS.read().expect("Couldn't read settings");
 		let host = set.host.as_str().to_owned();
 		let port = set.socket_port;
 		let sec = set.secure;
@@ -155,13 +155,13 @@ impl MainApp {
 					.danger_accept_invalid_certs(true)
 					.danger_accept_invalid_hostnames(true)
 					.build()
-					.unwrap();
+					.expect("Couldn't build tls connector");
 
 				// ngl I don't understand this part perfectly but it was online and it works
 				let mut stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
-				let parsed_url = url::Url::parse(
-					&format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port)
-				).unwrap();
+				let url = format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port);
+				let parsed_url = url::Url::parse(&url)
+					.expect(&format!("Failed to parse websocket URL: '{}'", url));
 
 				let mut tls_stream: Option<native_tls::TlsStream<std::net::TcpStream>> = None;
 
@@ -169,7 +169,8 @@ impl MainApp {
 				while tls_stream.is_none() {
 					match stream_try {
 						Ok(stream) => {
-							tls_stream = Some(connector.connect(&host, stream).unwrap());
+							tls_stream = Some(connector.connect(&host, stream)
+								.expect("Couldn't connect to valid TLS Stream"));
 							break;
 						},
 						Err(_) => {
@@ -184,7 +185,7 @@ impl MainApp {
 
 				tungstenite::client::client_with_config(
 					parsed_url,
-					tls_stream.unwrap(),
+					tls_stream.expect("Valid TLS Stream became invalid"),
 					config
 				)
 			};
@@ -527,6 +528,13 @@ impl MainApp {
 		// and not the compose body view
 		if self.input_view.input.len() > 0 || ch == ':' {
 			self.input_view.append_char(ch);
+
+			// set the outgoing websocket message in the state if we're writing a message
+			if self.input_view.input[..3].to_lowercase() == ":s " {
+				if let Ok(mut state) = STATE.write() {
+					state.set_typing_in_current();
+				}
+			}
 		} else {
 			match ch {
 				'h' | 'l' => self.switch_selected_box(),
@@ -544,8 +552,7 @@ impl MainApp {
 
 	fn handle_full_input(&mut self) {
 		// add the command that it's handling to the most recent commands so you can tab up to it
-		self.input_view.last_commands
-			.insert(0, self.input_view.input.as_str().to_owned());
+		self.input_view.last_commands.insert(0, self.input_view.input.to_owned());
 
 		// cmd is the first bit before a space, e.g. the ':s' in ':s hey friend'
 		let mut splits = self.input_view.input.split(' ').collect::<Vec<&str>>();
@@ -588,10 +595,8 @@ impl MainApp {
 				let index = splits[0].parse::<usize>();
 				match index {
 					Ok(idx) => self.messages_view.open_attachment(idx),
-					Err(_) => {
-						if let Ok(mut state) = STATE.write() {
-							state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
-						}
+					Err(_) => if let Ok(mut state) = STATE.write() {
+						state.hint_msg = format!("Cannot convert {} to an int", splits[0]);
 					}
 				}
 			} else if let Ok(mut state) = STATE.write() {
@@ -698,11 +703,9 @@ impl MainApp {
 					self.help_scroll = std::cmp::min(HELP_MSG.len() as u16, self.help_scroll + distance);
 				}
 			},
-			_ => {
+			_ => if let Ok(mut state) = STATE.write() {
 				// this shouldn't ever be called
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
-				}
+				state.hint_msg = "Sorry, I haven't implemented scrolling for this box yet :/".to_string();
 			},
 		}
 	}
@@ -790,7 +793,7 @@ impl MainApp {
 				}
 
 				if show_notif {
-					Settings::show_notification(&name, &text_content);
+					Utilities::show_notification(&name, &text_content);
 				}
 			},
 			MessageType::Typing | MessageType::Idle => {
@@ -799,7 +802,7 @@ impl MainApp {
 				if let Some(ref id) = text.chat_identifier {
 					// need to grab name now 'cause `text` is moved into messages_view
 					let name = text.sender.as_ref().unwrap_or(id).to_owned();
-					Settings::show_notification(&name, &format!("{} is typing...", name));
+					Utilities::show_notification(&name, &format!("{} is typing...", name));
 
 					// if we have selected a chat...
 					if let Some(ls) = self.selected_chat {
@@ -828,6 +831,11 @@ impl MainApp {
 				None => None,
 			}
 		};
+
+		// tell the websocket that I'm not typing anymore
+		if let Ok(mut state) = STATE.write() {
+			state.set_idle_in_current();
+		}
 
 		// only send it if you have a chat
 		if let Some(id) = chat_option {
