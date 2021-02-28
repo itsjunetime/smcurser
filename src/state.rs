@@ -20,14 +20,14 @@ impl GlobalState {
 	}
 
 	pub fn set_typing_in_current(&mut self) {
-		if let Some(chat) = self.current_chat {
-			self.outgoing_websocket_msg = format!("typing:{}", chat);
+		if let Some(ref chat) = self.current_chat {
+			self.outgoing_websocket_msg = Some(format!("typing:{}", chat));
 		}
 	}
 
 	pub fn set_idle_in_current(&mut self) {
-		if let Some(chat) = self.current_chat {
-			self.outgoing_websocket_msg = format!("idle:{}", chat);
+		if let Some(ref chat) = self.current_chat {
+			self.outgoing_websocket_msg = Some(format!("idle:{}", chat));
 		}
 	}
 }

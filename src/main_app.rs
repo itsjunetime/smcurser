@@ -405,7 +405,16 @@ impl MainApp {
 								match self.selected_box {
 									DisplayBox::ComposeBody => self.compose_body_view.route_keycode(event.code),
 									DisplayBox::ComposeAddress => self.address_view.route_keycode(event.code),
-									_ => self.input_view.route_keycode(event.code),
+									_ => {
+										self.input_view.route_keycode(event.code);
+										if event.code == KeyCode::Backspace &&
+											self.input_view.input.len() == 0 {
+
+											if let Ok(mut state) = STATE.write() {
+												state.set_idle_in_current();
+											}
+										}
+									},
 								};
 							},
 
@@ -530,7 +539,9 @@ impl MainApp {
 			self.input_view.append_char(ch);
 
 			// set the outgoing websocket message in the state if we're writing a message
-			if self.input_view.input[..3].to_lowercase() == ":s " {
+			if self.input_view.input.len() > 3 &&
+				self.input_view.input[..3].to_lowercase() == ":s " {
+
 				if let Ok(mut state) = STATE.write() {
 					state.set_typing_in_current();
 				}
