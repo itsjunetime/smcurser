@@ -37,9 +37,9 @@ impl MessagesView {
 	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect, is_selected: bool) {
 		// get the title and colorscheme
 		let (title, colorscheme) = if let Ok(set) = SETTINGS.read() {
-			(&set.messages_title, colorscheme::Colorscheme::from(&set.colorscheme))
+			(set.messages_title.to_owned(), colorscheme::Colorscheme::from(&set.colorscheme))
 		} else {
-			(&"| messages: |".to_owned(), colorscheme::Colorscheme::from("forest"))
+			("| messages: |".to_owned(), colorscheme::Colorscheme::from("forest"))
 		};
 
 		// recreate the vector that is used for drawing if the terminal has been resized
@@ -105,9 +105,9 @@ impl MessagesView {
 		// can only be called conditionally, and you don't have to call it every single time the
 		// view is redrawn.
 		let underline = if let Ok(set) = SETTINGS.read() {
-			&set.chat_underline
+			set.chat_underline.to_owned()
 		} else {
-			&"▔".to_owned()
+			"▔".to_owned()
 		};
 
 		let msg_width = rect.width as usize - 2;
@@ -311,13 +311,14 @@ impl MessagesView {
 	pub fn new_text(&mut self, msg: Message) {
 		// this basically adds the text onto the list, then runs `rerender_list`
 		// but it only rerenders the new text, if that makes sense.
-		let last = self.messages.last();
-		let i = self.messages.len();
-		let show_typing_again =
-			!self.typing_idx.is_none() && msg.is_from_me;
 
 		// so that it doesn't show typing anymore
 		self.set_idle();
+
+		// easy access so that we don't have to keep calling these
+		let last = self.messages.last();
+		let i = self.messages.len();
+		let show_typing_again = !self.typing_idx.is_none() && msg.is_from_me;
 
 		let last_timestamp = match last {
 			None => 0,
@@ -395,9 +396,9 @@ impl MessagesView {
 		self.line_list.append(&mut lines);
 
 		let underline = if let Ok(set) = SETTINGS.read() {
-			&set.chat_underline
+			set.chat_underline.to_owned()
 		} else {
-			&"▔".to_owned()
+			"▔".to_owned()
 		};
 
 		// add underline so it's pretty
@@ -414,8 +415,8 @@ impl MessagesView {
 		// while my message is loaded in, then show it again when it finishes loading in
 		if show_typing_again {
 			if let Ok(state) = STATE.read() {
-				if let Some(chat) = state.current_chat {
-					self.set_typing(Message::typing(&chat));
+				if let Some(ref chat) = state.current_chat {
+					self.set_typing(Message::typing(chat));
 				}
 			}
 		}
