@@ -11,6 +11,8 @@ use tui::{
 };
 use std::vec::Vec;
 use crossterm::event::KeyCode;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub struct InputView {
 	pub input: String, // the text that is input to this view
@@ -52,13 +54,21 @@ impl InputView {
 		// everything doesn't spazz out when you try to draw it.
 		if self.last_width != frame.size().width {
 			self.last_width = frame.size().width;
-			self.bounds.1 = self.input.len() as u16 - self.right_offset;
+			//self.bounds.1 = self.input.len() as u16 - self.right_offset;
+			self.bounds.1 = UnicodeWidthStr::width(self.input.as_str()) as u16 - self.right_offset;
 			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - self.last_width as i32 - 2, 0) as u16;
 		}
 
-		// get the substring that will be rendered
+		// here, we have to parse and display the input string as utf-8 graphemes instead of plain
+		// chars, since utf-8 graphemes may take up more than one char and trying to slice a string
+		// in the middle of a char boundary will result in a panic.
+		//let len = self.input.graphemes(true).count();
+		let len = UnicodeWidthStr::width(self.input.as_str());
+
+		let graphemes = self.input.graphemes(true).collect::<Vec<&str>>();
 		let render_string =
-			&self.input[self.bounds.0 as usize..std::cmp::min(self.input.len(), self.bounds.1 as usize)];
+			&graphemes[self.bounds.0 as usize..std::cmp::min(len, self.bounds.1 as usize)]
+			.join("");
 
 		let input_span = vec![Spans::from(vec![Span::raw(render_string)])];
 
@@ -78,11 +88,12 @@ impl InputView {
 			);
 		frame.render_widget(input_widget, rect);
 
+		let display_len = UnicodeWidthStr::width(self.input.as_str());
 		// not perfect logic but works with the flow of drawing in SMCurser to make everything look nice
 		if self.input.len() > 0 {
 			let cursor_x = std::cmp::min(
 				self.last_width - 2,
-				self.input.len() as u16 - self.right_offset - self.bounds.0 + 1
+				display_len as u16 - self.right_offset - self.bounds.0 + 1
 			);
 
 			frame.set_cursor(rect.x + cursor_x, rect.y + 1);
@@ -101,7 +112,13 @@ impl InputView {
 
 	pub fn append_char(&mut self, ch: char) {
 		// input it at the specified place
-		self.input.insert(self.input.len() - self.right_offset as usize, ch);
+		// also have to work with unicode here so that we don't insert in the middle of a utf char
+		let mut graph = self.input.graphemes(true).collect::<Vec<&str>>();
+		let len = graph.iter().count();
+
+		let ch_str = ch.to_string();
+		graph.insert(len - self.right_offset as usize, &ch_str);
+		self.input = graph.join("");
 
 		// scroll 0. This makes sure that the string will display nicely when redrawn
 		self.scroll(true, 0);
@@ -115,9 +132,16 @@ impl InputView {
 	}
 
 	pub fn handle_backspace(&mut self) {
-		let index = self.input.len() as i32 - self.right_offset as i32 - 1;
+		// have to handle this all as unicode so that people can backspace a whole unicode
+		// character
+		let mut graph = self.input.graphemes(true).collect::<Vec<&str>>();
+		let len = graph.iter().count();
+
+		let index = len as i32 - self.right_offset as i32 - 1;
 		if index > -1 {
-			self.input.remove(index as usize);
+			//self.input.remove(index as usize);
+			graph.remove(index as usize);
+			self.input = graph.join("");
 		}
 
 		// same
@@ -316,39 +340,42 @@ impl InputView {
 
 	pub fn scroll(&mut self, right: bool, distance: u16) {
 		// this is the actual scrolling part
+
+		let len = self.input.graphemes(true).count() as u16;
+
 		if right {
 			self.right_offset = std::cmp::max(0, self.right_offset as i32 - distance as i32) as u16;
 		} else {
-			self.right_offset = std::cmp::min(self.input.len() as u16, self.right_offset + distance);
+			self.right_offset = std::cmp::min(len, self.right_offset + distance);
 		}
 
 		// and this is the part that handles setting other variables to make sure it displays
 		// nicely on the next redraw. Just suffice it to say this handles setting all these parameters to
 		// the correct values for the input field to be pretty
 
-		let greater_than_view = self.input.len() as u16 - self.right_offset >= self.last_width - 2;
-		let bound_at_end = self.bounds.1 == self.input.len() as u16 - self.right_offset - 1;
+		let greater_than_view = len - self.right_offset >= self.last_width - 2;
+		let bound_at_end = self.bounds.1 == len - self.right_offset - 1;
 
-		let cursor_in_middle = self.input.len() as u16 - self.right_offset <= self.bounds.0;
+		let cursor_in_middle = len - self.right_offset <= self.bounds.0;
 
-		let less_than_view = self.last_width - 2 > self.input.len() as u16;
+		let less_than_view = self.last_width - 2 > len;
 
 		if greater_than_view && bound_at_end {
 
 			// set it so that the cursor will be at the farthest right end of the drawn input view
-			self.bounds.1 = self.input.len() as u16 - self.right_offset;
+			self.bounds.1 = len - self.right_offset;
 			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - (self.last_width as i32 - 3), 0) as u16;
 
 		} else if cursor_in_middle {
 
 			// sets the cursor to the leftmost end of the drawn input view
-			self.bounds.0 = self.input.len() as u16 - self.right_offset;
-			self.bounds.1 = std::cmp::min(self.bounds.0 + self.last_width - 3, self.input.len() as u16);
+			self.bounds.0 = len - self.right_offset;
+			self.bounds.1 = std::cmp::min(self.bounds.0 + self.last_width - 3, len);
 
 		} else if less_than_view {
 			// just sets the bounds to the full string, basically, since its length is less than
 			// the length of the view that it will be drawn in.
-			self.bounds.1 = self.input.len() as u16;
+			self.bounds.1 = len;
 		}
 	}
 

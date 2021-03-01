@@ -8,6 +8,7 @@ use tui::{
 	terminal::Frame,
 };
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub struct MessagesView {
 	pub selected_msg: u16,
@@ -159,7 +160,7 @@ impl MessagesView {
 					// find the length of the longest line (length calculated by utf-8 chars)
 					let mut max = text_lines.iter()
 						.fold(0, |m, l| {
-							let len = l.graphemes(true).count();
+							let len = UnicodeWidthStr::width(l.as_str());
 							if len > m { len } else { m }
 						});
 					let mut space = msg_width - max;

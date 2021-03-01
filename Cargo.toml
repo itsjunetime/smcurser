@@ -23,3 +23,4 @@ open = "1.4.0"
 toml = "0.5.8"
 dirs = "3.0.1"
 notify-rust = { version = "4.2.2", features = ["image"] }
+unicode-width = "0.1.8"
