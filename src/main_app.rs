@@ -6,6 +6,7 @@ use crate::{
 	input_view::*,
 	colorscheme::*,
 	utilities::*,
+	state::*,
 };
 use std::{
 	vec::Vec,
@@ -176,9 +177,10 @@ impl MainApp {
 						Err(_) => {
 							if let Ok(mut state) = STATE.write() {
 								state.hint_msg = "Websocket disconnected; retrying...".to_owned();
+								state.websocket_state = WebSocketState::Connecting;
 							}
-							stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
 							std::thread::sleep(Duration::from_secs(2));
+							stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
 						}
 					}
 				};
@@ -196,6 +198,10 @@ impl MainApp {
 			loop {
 				match sock_res {
 					Ok((mut socket, _)) => {
+						if let Ok(mut state) = STATE.write() {
+							state.websocket_state = WebSocketState::Connected;
+						}
+
 						loop {
 							// read the incoming message; we don't write to it (yet)
 							// so we don't need to poll
@@ -255,6 +261,7 @@ impl MainApp {
 						// if it initally connected, but is now somehow disconnected.
 						if let Ok(mut state) = STATE.write() {
 							state.hint_msg = format!("Error: Failed to connect to websocket: {} New messages will not show.", x);
+							state.websocket_state = WebSocketState::Disconnected;
 						}
 						// sleep and try again.
 						sleep(Duration::from_secs(2));
@@ -354,9 +361,9 @@ impl MainApp {
 
 					// create a span for the help box add the help string
 					let hint_msg = if let Ok(state) = STATE.read() {
-						state.hint_msg.as_str().to_string()
+						state.hint_msg.to_owned()
 					} else {
-						"type :h to get help :)".to_string()
+						"type :h to get help :)".to_owned()
 					};
 
 					let help_span = vec![Spans::from(vec![Span::styled(hint_msg, Style::default().fg(colorscheme.hints_box))])];
@@ -400,18 +407,29 @@ impl MainApp {
 						self.load_in_text(txt);
 					}
 					break;
-				} else {
-					let (new_width, new_height) = {
-						match term.size() {
-							Ok(size) => (size.width, size.height),
-							Err(_) => (0, 0)
-						}
-					};
-
-					if new_width != width || new_height != height {
-						break;
-					}
 				}
+
+				// we check at every poll interval to see if the terminal has resized. If it has,
+				// we break from getting input so that it can redraw with the new size.
+				let (new_width, new_height) = {
+					match term.size() {
+						Ok(size) => (size.width, size.height),
+						Err(_) => (0, 0)
+					}
+				};
+
+				if new_width != width || new_height != height {
+					break;
+				}
+
+				// we also check if the websocket has disconnected. This is so that we can show a
+				// message to let the user know it's disconnected
+				let disc = if let Ok(state) = STATE.read() {
+					state.websocket_state != WebSocketState::Connected
+				} else { false };
+
+				if disc { break };
+
 			} else {
 				match read()? {
 					Event::Key(event) => {
@@ -907,7 +925,7 @@ impl MainApp {
 		new_ops.push(val.join(" "));
 
 		if let Ok(mut set) = SETTINGS.write() {
-			set.parse_args(new_ops, true);
+			set.parse_args(new_ops, true, false);
 		}
 	}
 

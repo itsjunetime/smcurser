@@ -117,7 +117,7 @@ impl ChatsView {
 					let name = if c.display_name.len() > max_len {
 						format!("{}...", &c.display_name[..max_len - 3])
 					} else {
-						c.display_name.as_str().to_string()
+						c.display_name.to_owned()
 					};
 
 					// index; number that they will have to use to select the chat

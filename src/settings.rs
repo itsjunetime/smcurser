@@ -177,8 +177,8 @@ impl Settings {
 		self.push_to_req_url(format!("send?delete_text={}", text))
 	}
 
-	pub fn parse_args(&mut self, mut args: Vec<String>, tui_mode: bool) {
-		if !tui_mode {
+	pub fn parse_args(&mut self, mut args: Vec<String>, tui_mode: bool, parse_config: bool) {
+		if parse_config {
 			let pos = args.iter().position(|a| a.as_str() == "--config");
 
 			if let Some(p) = pos {
@@ -197,7 +197,7 @@ impl Settings {
 		let mut it = args.iter();
 
 		while let Some(arg) = it.next() {
-			if !tui_mode && arg.len() > 0 && arg.chars().nth(0).unwrap_or(' ') != '-' {
+			if parse_config && arg.len() > 0 && arg.chars().nth(0).unwrap_or(' ') != '-' {
 				println!("Option {} not recognized. Skipping...", arg);
 				continue;
 			}
@@ -296,15 +296,27 @@ impl Settings {
 		let contents_try = std::fs::read_to_string(&self.config_file);
 
 		if let Ok(contents) = contents_try {
-			let sets_try = toml::from_str(&contents);
 
-			if let Ok(sets) = sets_try {
-				*self = sets;
-			} else if let Err(err) = sets_try {
-				Settings::print_msg(
-					format!("There is an error with your config file; you may be missing some or all of the required fields: {}", err),
+			let toml_value = contents.parse::<toml::Value>();
+			match toml_value {
+				Ok(val) => {
+					if let Some(table) = val.as_table() {
+						let mut parsed = Vec::new();
+
+						for i in table.keys() {
+							if let Some(value) = table[i].as_str() {
+								parsed.push(i.to_owned());
+								parsed.push(value.to_owned());
+							}
+						}
+
+						self.parse_args(parsed, false, false);
+					}
+				},
+				Err(err) => Settings::print_msg(
+					format!("Could not parse config file as TOML: {}", err),
 					false
-				);
+				),
 			}
 		}
 	}

@@ -7,7 +7,6 @@ use tui::{
 	style::{Style, Modifier},
 	terminal::Frame,
 };
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub struct MessagesView {
@@ -115,7 +114,7 @@ impl MessagesView {
 		let opts = textwrap::Options::new((msg_width as f64 * 0.6) as usize);
 
 		let mut last_timestamp = 0;
-		let mut last_sender = "".to_string();
+		let mut last_sender = "".to_owned();
 		let mut att_temp = Vec::new();
 
 		// This gets a vector of spans for all the messages. It handles stuff like
@@ -130,7 +129,7 @@ impl MessagesView {
 						let date_pad = utilities::Utilities::date_pad_string(msg.date, msg_width);
 						let mut spans = vec![
 							MessageLine::blank(i),
-							MessageLine::new(date_pad.to_string(), MessageLineType::TimeDisplay, i, msg.is_from_me),
+							MessageLine::new(date_pad.to_owned(), MessageLineType::TimeDisplay, i, msg.is_from_me),
 							MessageLine::blank(i),
 						];
 						vec.append(&mut spans);
@@ -143,10 +142,10 @@ impl MessagesView {
 								vec.push(MessageLine::blank(i));
 							}
 
-							vec.push(MessageLine::new(send.to_string(), MessageLineType::Sender, i, msg.is_from_me));
+							vec.push(MessageLine::new(send.to_owned(), MessageLineType::Sender, i, msg.is_from_me));
 						}
 
-						last_sender = send.as_str().to_string();
+						last_sender = send.to_owned();
 					}
 
 					last_timestamp = msg.date;
@@ -154,7 +153,7 @@ impl MessagesView {
 					// split the text into its wrapped lines
 					let text_lines: Vec<String> = textwrap::fill(msg.text.as_str(), opts.clone())
 						.split('\n')
-						.map(|l| l.to_string())
+						.map(|l| l.to_owned())
 						.collect();
 
 					// find the length of the longest line (length calculated by utf-8 chars)
@@ -163,7 +162,28 @@ impl MessagesView {
 							let len = UnicodeWidthStr::width(l.as_str());
 							if len > m { len } else { m }
 						});
-					let mut space = msg_width - max;
+
+					// do attachments
+					for att in msg.attachments.iter() {
+						let att_str = format!("Attachment {}: {}",
+							att_temp.len(), att.mime_type);
+
+						if att_str.len() > max {
+							max = att_str.len();
+						}
+
+						let att_line = if msg.is_from_me {
+							let space = msg_width - att_str.len();
+							format!("{}{}", " ".repeat(space), att_str)
+						} else {
+							att_str
+						};
+
+						vec.push(MessageLine::new(att_line, MessageLineType::Text, i, msg.is_from_me));
+						att_temp.push(att.path.to_owned());
+					}
+
+					let space = msg_width - max;
 
 					if msg.text.len() > 0 {
 
@@ -181,29 +201,9 @@ impl MessagesView {
 						vec.append(&mut lines);
 					}
 
-					// do attachments
-					for att in msg.attachments.iter() {
-						let att_str = format!("Attachment {}: {}",
-							att_temp.len(), att.mime_type);
-
-						space = std::cmp::max(msg_width - att_str.len(), space);
-
-						let att_line = format!("{}{}",
-										if msg.is_from_me { " ".repeat(space) }
-										else { "".to_string() },
-										att_str);
-
-						if att_line.len() > max {
-							max = att_line.len();
-						}
-
-						vec.push(MessageLine::new(att_line, MessageLineType::Text, i, msg.is_from_me));
-						att_temp.push(att.path.as_str().to_string());
-					}
-
 					// add underline so it's pretty
 					let underline = format!("{}{}",
-						if msg.is_from_me { " ".repeat(space) } else { "".to_string() },
+						if msg.is_from_me { " ".repeat(space) } else { "".to_owned() },
 						underline.as_str().repeat(max)
 					);
 
@@ -263,7 +263,7 @@ impl MessagesView {
 
 	pub fn load_in_conversation(&mut self, id: &str) {
 		// load in the messages for a certain conversation
-		self.messages = APICLIENT.get_texts(id.to_string(), None, None, None, None);
+		self.messages = APICLIENT.get_texts(id.to_owned(), None, None, None, None);
 		self.messages.reverse(); // cause ya gotta. SMServer just sends them like that
 
 		self.last_width = 0; // to force it to redraw next time
@@ -279,11 +279,9 @@ impl MessagesView {
 			if let Some(chat) = &state.current_chat {
 				// get the texts with the current chat, offset by how many we currently have loaded
 				Some(APICLIENT.get_texts(
-						chat.as_str().to_string(),
-						None,
+						chat.to_owned(), None,
 						Some(self.messages.len() as i64),
-						None,
-						None
+						None, None
 				))
 			} else { None }
 		} else { None };
@@ -347,7 +345,7 @@ impl MessagesView {
 					self.line_list.push(MessageLine::blank(i));
 				}
 
-				self.line_list.push(MessageLine::new(send.to_string(), MessageLineType::Sender, i, msg.is_from_me));
+				self.line_list.push(MessageLine::new(send.to_owned(), MessageLineType::Sender, i, msg.is_from_me));
 			}
 		}
 
@@ -356,45 +354,52 @@ impl MessagesView {
 		// split the text into its wrapped lines
 		let text_lines: Vec<String> = textwrap::fill(msg.text.as_str(), opts)
 			.split('\n')
-			.map(|l| l.to_string())
+			.map(|l| l.to_owned())
 			.collect();
 
 		// find the length of the longest line (length calculated by utf-8 chars)
 		let mut max = text_lines.iter()
 			.fold(0, |m, l| {
-				let len = l.graphemes(true).count();
+				let len = UnicodeWidthStr::width(l.as_str());
 				if len > m { len } else { m }
 			});
-		let space = self.last_width as usize - 2 - max;
 
 		// do attachments
 		for att in msg.attachments.iter() {
-			let att_line = format!("{}Attachment {}: {}",
-								if msg.is_from_me { " ".repeat(space) }
-								else { "".to_string() },
-								self.attachments.len(),
-								att.mime_type);
+			let att_str = format!("Attachment {}: {}",
+				self.attachments.len(), att.mime_type);
 
-			if att_line.len() > max {
-				max = att_line.len();
+			if att_str.len() > max {
+				max = att_str.len();
 			}
 
+			let att_line = if msg.is_from_me {
+				let space = self.last_width as usize - att_str.len();
+				format!("{}{}", " ".repeat(space), att_str)
+			} else {
+				att_str
+			};
+
 			self.line_list.push(MessageLine::new(att_line, MessageLineType::Text, i, msg.is_from_me));
-			self.attachments.push(att.path.as_str().to_string());
+			self.attachments.push(att.path.to_owned());
 		}
 
+		let space = self.last_width as usize - 2 - max;
+
 		// add padding to my own texts so that they show correctly
-		let mut lines: Vec<MessageLine> = text_lines.into_iter()
-			.map(|l| {
-				let text = if msg.is_from_me {
-					format!("{}{}", " ".repeat(space), l)
-				} else { l };
+		if msg.text.len() > 0 {
+			let mut lines: Vec<MessageLine> = text_lines.into_iter()
+				.map(|l| {
+					let text = if msg.is_from_me {
+						format!("{}{}", " ".repeat(space), l)
+					} else { l };
 
-				MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
-			})
-			.collect();
+					MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
+				})
+				.collect();
 
-		self.line_list.append(&mut lines);
+			self.line_list.append(&mut lines);
+		}
 
 		let underline = if let Ok(set) = SETTINGS.read() {
 			set.chat_underline.to_owned()
@@ -404,7 +409,7 @@ impl MessagesView {
 
 		// add underline so it's pretty
 		let underline = format!("{}{}",
-			if msg.is_from_me { " ".repeat(space) } else { "".to_string() },
+			if msg.is_from_me { " ".repeat(space) } else { "".to_owned() },
 			underline.as_str().repeat(max)
 		);
 
@@ -456,7 +461,7 @@ impl MessagesView {
 
 			if let Err(err) = open::that(
 				set.attachment_string(
-					self.attachments[idx].as_str().to_string()
+					self.attachments[idx].to_owned()
 				)) {
 
 				if let Ok(mut state) = STATE.write() {

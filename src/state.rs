@@ -6,6 +6,7 @@ pub struct GlobalState {
 	pub hint_msg: String,
 	pub awaiting_new_convo: bool,
 	pub outgoing_websocket_msg: Option<String>,
+	pub websocket_state: WebSocketState,
 }
 
 impl GlobalState {
@@ -16,6 +17,7 @@ impl GlobalState {
 			hint_msg: "type :h to get help :)".to_string(),
 			awaiting_new_convo: false,
 			outgoing_websocket_msg: None,
+			websocket_state: WebSocketState::Disconnected,
 		}
 	}
 
@@ -30,4 +32,11 @@ impl GlobalState {
 			self.outgoing_websocket_msg = Some(format!("idle:{}", chat));
 		}
 	}
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WebSocketState {
+	Connected,
+	Connecting,
+	Disconnected,
 }

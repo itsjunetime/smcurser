@@ -54,7 +54,6 @@ impl InputView {
 		// everything doesn't spazz out when you try to draw it.
 		if self.last_width != frame.size().width {
 			self.last_width = frame.size().width;
-			//self.bounds.1 = self.input.len() as u16 - self.right_offset;
 			self.bounds.1 = UnicodeWidthStr::width(self.input.as_str()) as u16 - self.right_offset;
 			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - self.last_width as i32 - 2, 0) as u16;
 		}
@@ -126,6 +125,7 @@ impl InputView {
 
 	pub fn handle_escape(&mut self) {
 		self.input = "".to_owned();
+		self.right_offset = 0;
 
 		// once again, makes sure that the input will display nicely when redrawn
 		self.scroll(false, 0);

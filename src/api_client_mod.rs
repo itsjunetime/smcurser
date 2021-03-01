@@ -78,25 +78,33 @@ impl APIClient {
 		let req_str = SETTINGS.read().expect("Cannot read settings")
 			.chat_req_string(num, offset);
 
-		let response = self.get_url_string(&req_str)
-			.unwrap_or("".to_owned());
+		let response = self.get_url_string(&req_str);
 
-		// if we can't parse the JSON from this, something is majorly off.
-		let json: serde_json::Value = serde_json::from_str(&response).expect("Bad JSON :(");
-		let mut ret_vec = Vec::new();
+		match response {
+			Ok(res) => {
+				// if we can't parse the JSON from this, something is majorly off.
+				let json: serde_json::Value = serde_json::from_str(&res).expect("Bad JSON :(");
 
-		// so ngl I don't quite understand how ownership works with relation to serde_json so this
-		// is kind of a mess. It functions for my purposes tho
-		let obj = json.as_object().unwrap();
-		let chats = &obj["chats"];
-		let json_vec = chats.as_array().unwrap();
+				// so ngl I don't quite understand how ownership works with relation to serde_json so this
+				// is kind of a mess. It functions for my purposes tho
+				let obj = json.as_object().unwrap();
+				let chats = &obj["chats"];
+				let json_vec = chats.as_array().unwrap();
 
-		for value in json_vec {
-			let val = value.as_object().unwrap();
-			ret_vec.push(Conversation::from_json(val));
-		};
+				let ret_vec = json_vec.into_iter()
+					.map(|c| Conversation::from_json(c.as_object().unwrap()))
+					.collect::<Vec<Conversation>>();
 
-		ret_vec
+				ret_vec
+			},
+			Err(err) => {
+				// just show an error and return nothing if they can't get the chats
+				if let Ok(mut state) = STATE.write() {
+					state.hint_msg = format!("could not get conversations: {}", err);
+				}
+				Vec::new()
+			}
+		}
 	}
 
 	pub fn get_texts(
@@ -108,18 +116,28 @@ impl APIClient {
 		let req_str = SETTINGS.read().unwrap().msg_req_string(chat, num, offset, read, from);
 
 		let response = self.get_url_string(&req_str);
-		let json: serde_json::Value = serde_json::from_str(&(response.unwrap())).expect("Bad Texts JSON :(");
-		let mut ret_vec = Vec::new();
+		match response {
+			Ok(res) => {
+				let json: serde_json::Value = serde_json::from_str(&res).expect("Bad Texts JSON :(");
 
-		let object = json.as_object().unwrap();
-		let texts = &object["texts"];
-		let json_vec = texts.as_array().unwrap();
-		for value in json_vec {
-			let val = value.as_object().unwrap();
-			ret_vec.push(Message::from_json(val));
+				let object = json.as_object().unwrap();
+				let texts = &object["texts"];
+				let json_vec = texts.as_array().unwrap();
+
+				let ret_vec = json_vec.into_iter()
+					.map(|m| Message::from_json(m.as_object().unwrap()))
+					.collect::<Vec<Message>>();
+
+				ret_vec
+			},
+			Err(err) => {
+				if let Ok(mut state) = STATE.write() {
+					state.hint_msg = format!("could not get messages: {}", err);
+				}
+
+				Vec::new()
+			}
 		}
-
-		ret_vec
 	}
 
 	pub fn get_name(&self, chat_id: &str) -> String {
@@ -129,7 +147,7 @@ impl APIClient {
 		let req_str = SETTINGS.read().expect("Unable to read settings")
 			.name_req_string(chat_id);
 
-		self.get_url_string(&req_str).unwrap_or("".to_owned())
+		self.get_url_string(&req_str).unwrap_or(chat_id.to_owned())
 	}
 
 	pub fn send_text(
