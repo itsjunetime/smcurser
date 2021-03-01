@@ -114,7 +114,7 @@ impl MainApp {
 		while !self.quit_app {
 			self.draw(term)?;
 
-			let _ = self.get_input();
+			let _ = self.get_input(&term);
 
 			if self.redraw_all {
 				// term.resize forces everything to redraw
@@ -369,10 +369,16 @@ impl MainApp {
 		Ok(())
 	}
 
-	fn get_input(&mut self) -> crossterm::Result<()> {
+	fn get_input(&mut self, term: &Terminal<CrosstermBackend<Stdout>>) -> crossterm::Result<()> {
 		// we have to loop this so that if it gets a character/input we don't want,
 		// we can just grab the next character/input instead.
 		let mut distance = "".to_string();
+		let (width, height) = {
+			match term.size() {
+				Ok(size) => (size.width, size.height),
+				Err(_) => (0, 0),
+			}
+		};
 
 		loop {
 			if !poll(Duration::from_millis(20)).unwrap() {
@@ -394,6 +400,17 @@ impl MainApp {
 						self.load_in_text(txt);
 					}
 					break;
+				} else {
+					let (new_width, new_height) = {
+						match term.size() {
+							Ok(size) => (size.width, size.height),
+							Err(_) => (0, 0)
+						}
+					};
+
+					if new_width != width || new_height != height {
+						break;
+					}
 				}
 			} else {
 				match read()? {
