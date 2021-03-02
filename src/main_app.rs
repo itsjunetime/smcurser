@@ -21,6 +21,7 @@ use tui::{
 	style::Style,
 };
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub struct MainApp {
 	selected_chat: Option<usize>, // index of currently selected conversation in the chats array within the chats view
@@ -434,7 +435,7 @@ impl MainApp {
 				match read()? {
 					Event::Key(event) => {
 						match event.code {
-							// each view treats these keycodes the same, so just route it through 
+							// each view treats these keycodes the same, so just route it through
 							// the correct one.
 							KeyCode::Backspace | KeyCode::Tab | KeyCode::Esc => {
 								match self.selected_box {
@@ -573,12 +574,21 @@ impl MainApp {
 		if self.input_view.input.len() > 0 || ch == ':' {
 			self.input_view.append_char(ch);
 
-			// set the outgoing websocket message in the state if we're writing a message
-			if self.input_view.input.len() > 3 &&
-				self.input_view.input[..3].to_lowercase() == ":s " {
+			let graphemes = self.input_view.input
+				.graphemes(true)
+				.collect::<Vec<&str>>();
 
-				if let Ok(mut state) = STATE.write() {
-					state.set_typing_in_current();
+			// set the outgoing websocket message in the state if we're writing a message
+			if graphemes.len() > 3 {
+				let three_chars = graphemes[..3]
+					.join("")
+					.to_lowercase();
+
+				if three_chars == ":s " {
+
+					if let Ok(mut state) = STATE.write() {
+						state.set_typing_in_current();
+					}
 				}
 			}
 		} else {

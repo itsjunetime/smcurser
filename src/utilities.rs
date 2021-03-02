@@ -39,7 +39,7 @@ impl Utilities {
 			.append(true)
 			.open("log.log")
 			.expect("Cannot open log file for writing");
-			
+
 		let _ = writeln!(file, "{}", log_str);
 	}
 }

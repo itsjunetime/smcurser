@@ -61,12 +61,10 @@ impl InputView {
 		// here, we have to parse and display the input string as utf-8 graphemes instead of plain
 		// chars, since utf-8 graphemes may take up more than one char and trying to slice a string
 		// in the middle of a char boundary will result in a panic.
-		//let len = self.input.graphemes(true).count();
-		let len = UnicodeWidthStr::width(self.input.as_str());
 
 		let graphemes = self.input.graphemes(true).collect::<Vec<&str>>();
 		let render_string =
-			&graphemes[self.bounds.0 as usize..std::cmp::min(len, self.bounds.1 as usize)]
+			&graphemes[self.bounds.0 as usize..std::cmp::min(graphemes.len(), self.bounds.1 as usize)]
 			.join("");
 
 		let input_span = vec![Spans::from(vec![Span::raw(render_string)])];
@@ -87,15 +85,19 @@ impl InputView {
 			);
 		frame.render_widget(input_widget, rect);
 
-		let display_len = UnicodeWidthStr::width(self.input.as_str());
 		// not perfect logic but works with the flow of drawing in SMCurser to make everything look nice
 		if self.input.len() > 0 {
-			let cursor_x = std::cmp::min(
-				self.last_width - 2,
-				display_len as u16 - self.right_offset - self.bounds.0 + 1
-			);
+			let cursor_x = graphemes.len() as u16 - self.right_offset;
 
-			frame.set_cursor(rect.x + cursor_x, rect.y + 1);
+			let before_cursor = UnicodeWidthStr::width(
+				graphemes[self.bounds.0 as usize..cursor_x as usize]
+					.join("")
+					.as_str()
+			) as u16;
+
+			frame.set_cursor(rect.x + before_cursor + 1, rect.y + 1);
+		} else {
+			frame.set_cursor(rect.x + 1, rect.y + 1);
 		}
 	}
 
@@ -328,7 +330,7 @@ impl InputView {
 
 							self.input.truncate(self.input.len() - incomplete.len());
 							self.input = format!("{}{}", self.input, full_path);
-							
+
 							self.last_width = 0;
 							break;
 						}
@@ -341,7 +343,9 @@ impl InputView {
 	pub fn scroll(&mut self, right: bool, distance: u16) {
 		// this is the actual scrolling part
 
-		let len = self.input.graphemes(true).count() as u16;
+		let graphemes = self.input.graphemes(true).collect::<Vec<&str>>();
+		let len = graphemes.len() as u16;
+		let display_len = UnicodeWidthStr::width(self.input.as_str()) as u16;
 
 		if right {
 			self.right_offset = std::cmp::max(0, self.right_offset as i32 - distance as i32) as u16;
@@ -352,21 +356,30 @@ impl InputView {
 		// and this is the part that handles setting other variables to make sure it displays
 		// nicely on the next redraw. Just suffice it to say this handles setting all these parameters to
 		// the correct values for the input field to be pretty
+		//
+		// also, we have to occasionally do stuff as i32s so that we can ensure it doesn't overflow
 
-		let greater_than_view = len - self.right_offset >= self.last_width - 2;
-		let bound_at_end = self.bounds.1 == len - self.right_offset - 1;
+		let display_len_to_offset = UnicodeWidthStr::width(
+			graphemes[0..(len - self.right_offset) as usize]
+				.join("")
+				.as_str()
+		) as u16;
 
-		let cursor_in_middle = len - self.right_offset <= self.bounds.0;
+		//let greater_than_view = display_len_to_offset >= self.last_width - 2;
+		let greater_than_view = display_len_to_offset > self.last_width - 2;
+		let bound_before_end = self.bounds.1 as i32 <= display_len_to_offset as i32 - 1;
 
-		let less_than_view = self.last_width - 2 > len;
+		let cursor_at_beginning = display_len_to_offset <= self.bounds.0;
 
-		if greater_than_view && bound_at_end {
+		let less_than_view = self.last_width - 2 > display_len;
+
+		if greater_than_view && bound_before_end {
 
 			// set it so that the cursor will be at the farthest right end of the drawn input view
 			self.bounds.1 = len - self.right_offset;
 			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - (self.last_width as i32 - 3), 0) as u16;
 
-		} else if cursor_in_middle {
+		} else if cursor_at_beginning {
 
 			// sets the cursor to the leftmost end of the drawn input view
 			self.bounds.0 = len - self.right_offset;
@@ -375,7 +388,7 @@ impl InputView {
 		} else if less_than_view {
 			// just sets the bounds to the full string, basically, since its length is less than
 			// the length of the view that it will be drawn in.
-			self.bounds.1 = len;
+			self.bounds = (0, len);
 		}
 	}
 

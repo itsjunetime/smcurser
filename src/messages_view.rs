@@ -217,15 +217,18 @@ impl MessagesView {
 		self.attachments = att_temp;
 
 		// y_bounds are what are shown
-		self.y_bounds = (self.line_list.len() as u16 - rect.height, self.line_list.len() as u16 - 1);
+		if self.line_list.len() as u16 >= rect.height {
+			self.y_bounds = (self.line_list.len() as u16 - rect.height, self.line_list.len() as u16 - 1);
+		}
 		self.scroll(false, 0);
 	}
 
 	pub fn scroll(&mut self, up: bool, distance: u16) {
 
+		if self.messages.len() == 0 { return; }
+
 		// up == scrolling to older messages
 		if !up {
-			// have to convert to signed to prevent overflow
 			self.selected_msg = std::cmp::min(self.selected_msg + distance, self.messages.len() as u16 - 1);
 
 			let scroll_opt = self.line_list.iter()
@@ -244,6 +247,7 @@ impl MessagesView {
 				self.y_bounds.1 = scroll;
 			}
 		} else {
+			// have to convert to signed to prevent overflow
 			self.selected_msg = std::cmp::max(self.selected_msg as i32 - distance as i32, 0) as u16;
 
 			let scroll_opt = self.line_list.iter().position(|m| m.relative_index as u16 == self.selected_msg);
