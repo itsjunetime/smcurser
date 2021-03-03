@@ -7,6 +7,7 @@ A tui client for [SMServer](https://github.com/ianwelker/smserver), written in R
 - Typing indicators
 - Ability to send tapbacks
 - Ability to delete conversations and texts
+- Ability to create and use custom colorschemes
 - Way faster, with much lower CPU & memory usage
 - Optional configuration file for persistent customization
 - New text composition is much easier

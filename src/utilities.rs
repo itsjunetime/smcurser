@@ -1,6 +1,7 @@
 use chrono::prelude::*;
 use notify_rust::Notification;
 use std::io::prelude::*;
+use crate::*;
 
 pub struct Utilities;
 
@@ -42,4 +43,15 @@ impl Utilities {
 
 		let _ = writeln!(file, "{}", log_str);
 	}
+
+	pub fn print_msg(msg: String, tui_mode: bool) {
+		if tui_mode {
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = msg;
+			}
+		} else {
+			println!("{}", msg)
+		}
+	}
+
 }

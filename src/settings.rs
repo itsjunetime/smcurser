@@ -1,5 +1,9 @@
-use crate::*;
+use crate::{
+	utilities::*,
+	colorscheme::*,
+};
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Deserialize)]
 pub struct Settings {
@@ -27,19 +31,28 @@ pub struct Settings {
 	pub timeout: u16,
 	pub show_help: bool,
 	pub config_file: String,
+	pub colorscheme_file: String,
+	pub custom_colorschemes: Option<Vec<Colorscheme>>,
 }
 
 impl Settings {
 	pub fn default() -> Settings {
-		let config_file = {
+		let (config_file, colorscheme_file) = {
 			let mut config_dir = dirs::config_dir()
 				.expect("Cannot detect your system's configuration directory. Please file an issue with the maintainer");
 
 			config_dir.push("smcurser");
+			let mut colorscheme_dir = config_dir.clone();
+
 			config_dir.push("smcurser");
 			config_dir.set_extension("toml");
 
-			config_dir.into_os_string().into_string().unwrap_or("".to_owned())
+			let config = config_dir.into_os_string().into_string().unwrap_or("".to_owned());
+
+			colorscheme_dir.push("colorschemes");
+			colorscheme_dir.set_extension("toml");
+			let colorschemes = colorscheme_dir.into_os_string().into_string().unwrap_or("".to_owned());
+			(config, colorschemes)
 		};
 
 		Settings {
@@ -67,6 +80,8 @@ impl Settings {
 			timeout: 10,
 			show_help: false,
 			config_file: config_file,
+			colorscheme_file: colorscheme_file,
+			custom_colorschemes: None,
 		}
 	}
 
@@ -284,7 +299,7 @@ impl Settings {
 						self.timeout = u;
 					},
 				"help" => self.show_help = self.get_bool_from_it(&mut it, arg, tui_mode) && !tui_mode,
-				x => Settings::print_msg(
+				x => Utilities::print_msg(
 					format!("Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x),
 					tui_mode
 				),
@@ -313,8 +328,117 @@ impl Settings {
 						self.parse_args(parsed, false, false);
 					}
 				},
-				Err(err) => Settings::print_msg(
+				Err(err) => Utilities::print_msg(
 					format!("Could not parse config file as TOML: {}", err),
+					false
+				),
+			}
+		}
+	}
+
+	pub fn parse_custom_colorschemes(&mut self) {
+		let contents_try = std::fs::read_to_string(&self.colorscheme_file);
+
+		if let Ok(contents) = contents_try {
+
+			let toml_value = contents.parse::<toml::Value>();
+			match toml_value {
+				Ok(val) => {
+					if let Some(arr) = val.as_table() {
+						let names = vec![
+							"selected_box",
+							"unselected_box",
+							"my_underline",
+							"their_underline",
+							"selected_underline",
+							"chat_indicator",
+							"unread_indicator",
+							"text_color",
+							"hints_box"
+						];
+
+						for color_spec in arr.keys() {
+							if let Some(spec) = arr[color_spec].as_table() {
+
+								if spec.keys().len() != names.len() {
+									Utilities::print_msg(
+										format!("\x1b[18;1mError:\x1b[0m Your colorscheme {} does not contain the correct number \
+											of color specifiers. Please check the documentation", color_spec),
+										false
+									);
+
+									continue;
+								}
+
+								let mut bad_spec = false;
+								let mut map: HashMap<String, Vec<u8>> = HashMap::new();
+
+								for key in spec.keys() {
+									let mut rgb: Vec<u8> = Vec::new();
+
+									if !names.contains(&(*key).as_str()) {
+										Utilities::print_msg(
+											format!("\x1b[18;1mError:\x1b[0m You have an incorrect specification in '{}': {}", color_spec, key),
+											false
+										);
+
+										bad_spec = true;
+									} else if !spec[key].is_array() {
+										Utilities::print_msg(
+											format!("\x1b[18;1mError:\x1b[0m The color {} in scheme {} is not formatted correctly", key, color_spec),
+											false
+										);
+
+										bad_spec = true;
+									} else if let Some(arr) =  spec[key].as_array() {
+
+										for val in arr {
+											if let Some(uint) = val.as_integer() {
+												if uint > 254 || uint < 0 {
+													Utilities::print_msg(
+														format!("\x1b[18;1mError:\x1b[0m Please keep rgb values between 0 - 254, inclusive."),
+														false
+													);
+
+													bad_spec = true;
+													break;
+												}
+
+												rgb.push(uint as u8);
+											} else {
+												Utilities::print_msg(
+													format!("\x1b[18;1mError:\x1b[0m RGB values must all be UInts, between 0 - 254, inclusive"),
+													false
+												);
+
+												bad_spec = true;
+											}
+										}
+									}
+
+									map.insert(key.to_owned(), rgb);
+
+									if bad_spec { break; }
+
+								}
+
+								if bad_spec { continue; }
+
+								let colorscheme = Colorscheme::from_specs(color_spec.to_owned(), map);
+
+								if self.custom_colorschemes.is_none() {
+									self.custom_colorschemes = Some(vec![colorscheme]);
+								} else {
+									self.custom_colorschemes.as_mut()
+										.unwrap()
+										.push(colorscheme);
+								}
+							}
+						}
+					}
+				},
+				Err(err) => Utilities::print_msg(
+					format!("Could not parse colorschemes files as TOML: {}", err),
 					false
 				),
 			}
@@ -325,17 +449,17 @@ impl Settings {
 		if let Some(to_parse) = it.next() {
 			if let Ok(value) = to_parse.parse() {
 				if tui_mode {
-					Settings::print_msg(format!("set {} to {}", key, value), false);
+					Utilities::print_msg(format!("set {} to {}", key, value), false);
 				}
 				Some(value)
 			} else {
 				let pstr = format!("Please enter an integer value for the key {}", key);
-				Settings::print_msg(pstr, tui_mode);
+				Utilities::print_msg(pstr, tui_mode);
 				None
 			}
 		} else {
 			let pstr = format!("Please enter a value for the key {}", key);
-			Settings::print_msg(pstr, tui_mode);
+			Utilities::print_msg(pstr, tui_mode);
 			None
 		}
 	}
@@ -343,12 +467,12 @@ impl Settings {
 	fn get_string_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<String> {
 		if let Some(value) = it.next() {
 			if tui_mode {
-				Settings::print_msg(format!("set {} to {}", key, value), true);
+				Utilities::print_msg(format!("set {} to {}", key, value), true);
 			}
 			Some(value.to_owned())
 		} else {
 			let pstr = format!("Please enter a value for the key {}", key);
-			Settings::print_msg(pstr, tui_mode);
+			Utilities::print_msg(pstr, tui_mode);
 			None
 		}
 	}
@@ -357,17 +481,17 @@ impl Settings {
 		if let Some(value) = it.next() {
 			if let Ok(c) = value.parse() {
 				if tui_mode {
-					Settings::print_msg(format!("set {} to {}", key, c), true);
+					Utilities::print_msg(format!("set {} to {}", key, c), true);
 				}
 				Some(c)
 			} else {
 				let pstr = format!("Please enter a single character for the key {}", key);
-				Settings::print_msg(pstr, tui_mode);
+				Utilities::print_msg(pstr, tui_mode);
 				None
 			}
 		} else {
 			let pstr = format!("Please enter a single character for the key {}", key);
-			Settings::print_msg(pstr, tui_mode);
+			Utilities::print_msg(pstr, tui_mode);
 			None
 		}
 	}
@@ -379,20 +503,10 @@ impl Settings {
 		};
 
 		if tui_mode {
-			Settings::print_msg(format!("set {} to {}", key, b), true);
+			Utilities::print_msg(format!("set {} to {}", key, b), true);
 		}
 
 		b
-	}
-
-	fn print_msg(msg: String, tui_mode: bool) {
-		if tui_mode {
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = msg;
-			}
-		} else {
-			println!("{}", msg)
-		}
 	}
 
 }
