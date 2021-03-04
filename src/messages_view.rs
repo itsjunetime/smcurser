@@ -316,12 +316,12 @@ impl MessagesView {
 		// but it only rerenders the new text, if that makes sense.
 
 		// so that it doesn't show typing anymore
+		let show_typing_again = !self.typing_idx.is_none() && msg.is_from_me;
 		self.set_idle();
 
 		// easy access so that we don't have to keep calling these
 		let last = self.messages.last();
 		let i = self.messages.len();
-		let show_typing_again = !self.typing_idx.is_none() && msg.is_from_me;
 
 		let last_timestamp = match last {
 			None => 0,
@@ -437,15 +437,19 @@ impl MessagesView {
 	}
 
 	pub fn set_typing(&mut self, text: Message) {
+
 		// show a new text at the bottom that says `Typing...`
-		if let None = self.typing_idx {
+		if self.typing_idx.is_none() {
 			let model = MessageLine::new("Typing...".to_owned(), MessageLineType::Typing, self.messages.len(), false);
 			self.line_list.push(model);
+
 			// set the typing index of for the chat so that we know where the typing indicator is;
 			// we use this index to remove it later
 			self.typing_idx = Some(self.line_list.len() - 1);
 
 			self.messages.push(text);
+			self.selected_msg = self.messages.len() as u16 - 1;
+			self.scroll(false, 0);
 		}
 	}
 
@@ -456,6 +460,10 @@ impl MessagesView {
 			// remove the typing message
 			self.messages.remove(line.relative_index);
 			self.line_list.remove(id);
+
+			// reset stuff to how it was before they started typing
+			self.typing_idx = None;
+			self.scroll(false, 0);
 		}
 	}
 

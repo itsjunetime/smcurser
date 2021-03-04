@@ -857,8 +857,10 @@ impl MainApp {
 
 				if let Some(ref id) = text.chat_identifier {
 					// need to grab name now 'cause `text` is moved into messages_view
-					let name = text.sender.as_ref().unwrap_or(id).to_owned();
-					Utilities::show_notification(&name, &format!("{} is typing...", name));
+					if text.message_type == MessageType::Typing {
+						let name = text.sender.as_ref().unwrap_or(id);
+						Utilities::show_notification(&name, &format!("{} is typing...", name));
+					}
 
 					// if we have selected a chat...
 					if let Some(ls) = self.selected_chat {
