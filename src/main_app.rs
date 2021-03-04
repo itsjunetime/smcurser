@@ -329,11 +329,13 @@ impl MainApp {
 						).split(main_layout[0]);
 
 					let chats_selected = self.selected_box == DisplayBox::Chats;
+					let input_cursor = self.selected_box != DisplayBox::ComposeAddress &&
+						self.selected_box != DisplayBox::ComposeBody;
 
 					// always draw the chats_view and input_view since it doesn't mattter to them
 					// if the compose display is currently selected
 					self.chats_view.draw_view(f, content_layout[0], chats_selected);
-					self.input_view.draw_view(f, main_layout[1], false);
+					self.input_view.draw_view(f, main_layout[1], false, input_cursor);
 
 					// if the compose display is up...
 					if DisplayBox::ComposeAddress == self.selected_box
@@ -352,11 +354,13 @@ impl MainApp {
 
 						// draw the address view above the messages view, and the body view under
 						// the messages view. The messages view will just be a bit squished.
+						let address_cursor = self.selected_box == DisplayBox::ComposeAddress;
 						self.address_view.draw_view(f, message_layout[0],
-							self.selected_box == DisplayBox::ComposeAddress);
+							address_cursor, address_cursor);
+
 						self.messages_view.draw_view(f, message_layout[1], false);
 						self.compose_body_view.draw_view(f, message_layout[2],
-							self.selected_box == DisplayBox::ComposeBody);
+							!address_cursor, !address_cursor);
 
 					} else {
 						// if it's not, just draw the messages view like normal

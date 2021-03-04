@@ -1,5 +1,5 @@
 use crate::{
-	utilities::*,
+	utilities::Utilities,
 	colorscheme::*,
 };
 use serde::Deserialize;
@@ -7,6 +7,7 @@ use std::{
 	collections::HashMap,
 	fs::read_to_string,
 	slice::Iter,
+	iter::Peekable,
 };
 
 
@@ -197,11 +198,15 @@ impl Settings {
 		self.push_to_req_url(format!("send?delete_text={}", text))
 	}
 
+	pub fn set_fallback_as_host(&mut self) {
+		std::mem::swap(&mut self.fallback_host, &mut self.host);
+	}
+
 	pub fn parse_args(&mut self, mut args: Vec<String>, tui_mode: bool, parse_config: bool) {
 		if parse_config {
-			let pos = args.iter().position(|a| a.as_str() == "--config");
+			let conf_pos = args.iter().position(|a| a.as_str() == "--config");
 
-			if let Some(p) = pos {
+			if let Some(p) = conf_pos {
 				if p + 1 < args.len() {
 					let _ = args.drain(p..p+1).nth(0);
 					let new_conf = args.drain(p..p+1).nth(0);
@@ -212,9 +217,24 @@ impl Settings {
 			}
 
 			self.parse_config_file();
+
+			let color_pos = args.iter()
+				.position(|a| a.as_str() == "--colorscheme_file");
+
+			if let Some(pos) = color_pos {
+				if pos + 1 < args.len() {
+					let _ = args.drain(pos..pos+1).nth(0);
+					let new_colors = args.drain(pos..pos+1).nth(0);
+					if let Some(cls) = new_colors {
+						self.colorscheme_file = cls;
+					}
+				}
+			}
+
+			self.parse_custom_colorschemes();
 		}
 
-		let mut it = args.iter();
+		let mut it = args.iter().peekable();
 
 		while let Some(arg) = it.next() {
 			if parse_config && arg.len() > 0 && arg.chars().nth(0).unwrap_or(' ') != '-' {
@@ -302,6 +322,10 @@ impl Settings {
 				"timeout" =>
 					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
 						self.timeout = u;
+					},
+				"use_fallback" =>
+					if self.get_bool_from_it(&mut it, arg, tui_mode) {
+						self.set_fallback_as_host();
 					},
 				"help" => self.show_help = self.get_bool_from_it(&mut it, arg, tui_mode) && !tui_mode,
 				x => Utilities::print_msg(
@@ -450,9 +474,10 @@ impl Settings {
 		}
 	}
 
-	fn get_u16_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> Option<u16> {
-		if let Some(to_parse) = it.next() {
+	fn get_u16_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> Option<u16> {
+		if let Some(to_parse) = it.peekable().peek() {
 			if let Ok(value) = to_parse.parse() {
+				let _ = it.next();
 				if tui_mode {
 					Utilities::print_msg(format!("set {} to {}", key, value), false);
 				}
@@ -469,7 +494,7 @@ impl Settings {
 		}
 	}
 
-	fn get_string_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> Option<String> {
+	fn get_string_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> Option<String> {
 		if let Some(value) = it.next() {
 			if tui_mode {
 				Utilities::print_msg(format!("set {} to {}", key, value), true);
@@ -482,9 +507,10 @@ impl Settings {
 		}
 	}
 
-	fn get_char_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> Option<char> {
-		if let Some(value) = it.next() {
+	fn get_char_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> Option<char> {
+		if let Some(value) = it.peek() {
 			if let Ok(c) = value.parse() {
+				let _ = it.next();
 				if tui_mode {
 					Utilities::print_msg(format!("set {} to {}", key, c), true);
 				}
@@ -501,10 +527,15 @@ impl Settings {
 		}
 	}
 
-	fn get_bool_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> bool {
-		let b = match it.next() {
+	fn get_bool_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> bool {
+		let b = match it.peek() {
 			None => true,
-			Some(val) => val.parse().unwrap_or(true)
+			Some(val) => if let Ok(b_val) = val.parse() {
+				let _ = it.next();
+				b_val
+			} else {
+				true
+			}
 		};
 
 		if tui_mode {

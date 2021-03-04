@@ -63,7 +63,7 @@ fn main() -> Result<(), Error> {
 
 fn parse_args(args: Vec<String>) {
 	let mut set = SETTINGS.write().expect("Couldn't open settings to write. Please try again or contact the developer.");
-	set.parse_custom_colorschemes();
+	//set.parse_custom_colorschemes();
 	set.parse_args(args, false, true);
 }
 
@@ -101,32 +101,32 @@ const HELP_MSG: [&str; 31] = [
 	"this deletes the currently selected text. There is no prompting, it immediately deletes it, so make sure that you are careful with this comand",
 ];
 
-const CMD_HELP: [&str; 47] = [
+const CMD_HELP: [&str; 51] = [
 	"usage: \x1b[1m./smcurser [options]\x1b[0m",
 	"",
 	"\x1b[1mOptions:\x1b[0m",
 	"    \x1b[1m--help\x1b[0m                    : Show this help menu",
 	"                                Default: false",
 	"    \x1b[1m--host\x1b[0m <value>            : The hostname of device which you are trying to connect to",
-    "                                Default:",
+	"                                Default:",
 	"    \x1b[1m--fallback_host\x1b[0m <value>   : The fallback host to connect to, if the host fails",
-    "                                Default:",
+	"                                Default:",
 	"    \x1b[1m--server_port\x1b[0m <value>     : The port on which SMServer is running on the host device",
-    "                                Default: 8741",
+	"                                Default: 8741",
 	"    \x1b[1m--socket_port\x1b[0m <value>     : The port on which the SMServer websocket is running on the host device",
-    "                                Default: 8740",
+	"                                Default: 8740",
 	"    \x1b[1m--secure\x1b[0m                  : Toggle connecting to a secure server",
-    "                                Default: true",
-    "    \x1b[1m--notifications\x1b[0m           : Toggle showing notifications or not",
-    "                                Default: true",
-    "    \x1b[1m--password\x1b[0m <value>        : The password to try to connect to the host device with",
-    "                                Default: toor",
-    "    \x1b[1m--chat_indicator\x1b[0m <value>  : The character to use to indicate the currently selected chat",
-    "                                Default: >",
+	"                                Default: true",
+	"    \x1b[1m--notifications\x1b[0m           : Toggle showing notifications or not",
+	"                                Default: true",
+	"    \x1b[1m--password\x1b[0m <value>        : The password to try to connect to the host device with",
+	"                                Default: toor",
+	"    \x1b[1m--chat_indicator\x1b[0m <value>  : The character to use to indicate the currently selected chat",
+	"                                Default: >",
 	"    \x1b[1m--unread_indicator\x1b[0m <value>: The character to use to indicate all chats with unread messages",
 	"                                Default: •",
-    "    \x1b[1m--my_chat_end\x1b[0m <value>     : The tail to use on the end of your text messages",
-    "                                Default: ⧹▏",
+	"    \x1b[1m--my_chat_end\x1b[0m <value>     : The tail to use on the end of your text messages",
+	"                                Default: ⧹▏",
 	"    \x1b[1m--their_chat_end\x1b[0m <value>  : The tail to use on the end of their text messages",
 	"                                Default: ▕⧸",
 	"    \x1b[1m--chat_underline\x1b[0m <value>  : The character to repeat to create the underline of the text messages",
@@ -149,4 +149,8 @@ const CMD_HELP: [&str; 47] = [
 	"                                Default: 10",
 	"    \x1b[1m--timeout\x1b[0m <value>         : The timeout for API queries in seconds",
 	"                                Default: 10",
+	"    \x1b[1m--use_fallback\x1b[0m <value>    : This sets SMCurser to use the fallback host as the main host",
+	"                                Default: false",
+	"    \x1b[1m--colorscheme_file\x1b[0m <value>: The file that SMCurser should parse to find custom colorschemes",
+	"                                Default: $XDG_CONFIG_DIR/smcurser/colorschemes.toml",
 ];

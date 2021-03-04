@@ -42,7 +42,9 @@ impl InputView {
 		}
 	}
 
-	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, rect: Rect, selected: bool) {
+	pub fn draw_view(
+		&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, rect: Rect, selected: bool, take_cursor: bool
+	) {
 		// get the colorscheme
 		let (mut title, colorscheme) = if let Ok(set) = SETTINGS.read() {
 			(set.input_title.to_owned(), Colorscheme::from(&set.colorscheme))
@@ -90,8 +92,9 @@ impl InputView {
 			);
 		frame.render_widget(input_widget, rect);
 
-		// not perfect logic but works with the flow of drawing in SMCurser to make everything look nice
-		if self.input.len() > 0 {
+		// now we have to calculate exactly where the cursor should be, if we want to draw it in
+		// this view.
+		if take_cursor {
 			let cursor_x = graphemes.len() as u16 - self.right_offset;
 
 			let before_cursor = UnicodeWidthStr::width(
@@ -101,8 +104,6 @@ impl InputView {
 			) as u16;
 
 			frame.set_cursor(rect.x + before_cursor + 1, rect.y + 1);
-		} else {
-			frame.set_cursor(rect.x + 1, rect.y + 1);
 		}
 	}
 
@@ -158,12 +159,15 @@ impl InputView {
 	pub fn handle_tab(&mut self) {
 		// if the  first 3 characters are `:f ` or `:F `, then they're pressing tab to get file
 		// path completion. Handle that separately.
-		if self.input.len() > 0 &&
-			&self.input[..3].to_lowercase() != ":f " {
 
-			self.input.push_str("	");
-		} else {
+		let graphemes = self.input.graphemes(true).collect::<Vec<&str>>();
+
+		if graphemes.len() > 2 &&
+			&graphemes[..3].join("").to_lowercase() == ":f " {
+
 			self.handle_tab_completion();
+		} else {
+			self.input.push_str("	");
 		}
 	}
 
@@ -278,22 +282,17 @@ impl InputView {
 			}
 		}
 
-		// Set poss_files to the beginning of the file that they
-		// may have been trying to escape
-		let poss_files = if to_drop > 0 {
-			top_dirs.drain(top_dirs.len() - to_drop..top_dirs.len())
-				.collect::<Vec<&str>>()
-				.join("")
-		} else {
-			"".to_owned()
-		};
-
 		// Set file to the whole untyped file name, including the possibly escaped sections
-		let file = format!("{}{}{}",
-			poss_files,
-			if to_drop > 0 { dir_char } else { "" },
+		let file = if to_drop > 0 {
+			let poss_files = top_dirs
+				.drain(top_dirs.len() - to_drop..top_dirs.len())
+				.collect::<Vec<&str>>()
+				.join("");
+
+			format!("{}{}{}", poss_files, dir_char, first_file)
+		} else {
 			first_file
-		);
+		};
 
 		// dir = the whole parent directory for the file they were entering
 		let dir = top_dirs.join(dir_char);
