@@ -7,6 +7,10 @@ use tui::{
 	style::Style,
 	terminal::Frame,
 };
+use std::{
+	cmp::{min, max},
+	io::Stdout,
+};
 
 pub struct ChatsView {
 	pub scroll: u16,
@@ -31,7 +35,7 @@ impl ChatsView {
 		}
 	}
 
-	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect, is_selected: bool) {
+	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, rect: Rect, is_selected: bool) {
 		// draws the view for this specific struct
 
 		if let Ok(set) = SETTINGS.read() {
@@ -139,7 +143,7 @@ impl ChatsView {
 		if !up {
 			// only scroll to lower limit
 			let max = self.chats_list.len() as u16 - (self.last_height / 2) + 2;
-			self.scroll = std::cmp::min(self.scroll + distance, max);
+			self.scroll = min(self.scroll + distance, max);
 
 			// load in new texts automatically if you hit the limit
 			if self.scroll == max {
@@ -150,7 +154,7 @@ impl ChatsView {
 			}
 		} else {
 			// only scroll to upper limit
-			self.scroll = std::cmp::max(self.scroll as i32 - distance as i32, 0) as u16;
+			self.scroll = max(self.scroll as i32 - distance as i32, 0) as u16;
 		}
 	}
 

@@ -8,6 +8,10 @@ use tui::{
 	terminal::Frame,
 };
 use unicode_width::UnicodeWidthStr;
+use std::{
+	cmp::{min, max},
+	io::Stdout,
+};
 
 pub struct MessagesView {
 	pub selected_msg: u16,
@@ -34,7 +38,7 @@ impl MessagesView {
 		}
 	}
 
-	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect, is_selected: bool) {
+	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, rect: Rect, is_selected: bool) {
 		// get the title and colorscheme
 		let (title, colorscheme) = if let Ok(set) = SETTINGS.read() {
 			(set.messages_title.to_owned(), colorscheme::Colorscheme::from(&set.colorscheme))
@@ -229,7 +233,7 @@ impl MessagesView {
 
 		// up == scrolling to older messages
 		if !up {
-			self.selected_msg = std::cmp::min(self.selected_msg + distance, self.messages.len() as u16 - 1);
+			self.selected_msg = min(self.selected_msg + distance, self.messages.len() as u16 - 1);
 
 			let scroll_opt = self.line_list.iter()
 				.position(|m| m.relative_index as u16 > self.selected_msg);
@@ -248,7 +252,7 @@ impl MessagesView {
 			}
 		} else {
 			// have to convert to signed to prevent overflow
-			self.selected_msg = std::cmp::max(self.selected_msg as i32 - distance as i32, 0) as u16;
+			self.selected_msg = max(self.selected_msg as i32 - distance as i32, 0) as u16;
 
 			let scroll_opt = self.line_list.iter().position(|m| m.relative_index as u16 == self.selected_msg);
 			if let Some(scroll) = scroll_opt {

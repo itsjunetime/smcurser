@@ -12,6 +12,9 @@ use std::{
 	vec::Vec,
 	io::{Stdout, Error, ErrorKind},
 	thread::{spawn, sleep},
+	net::TcpStream,
+	mem::swap,
+	cmp::{min, max},
 };
 use core::time::Duration;
 use tui::{
@@ -160,12 +163,12 @@ impl MainApp {
 					.expect("Couldn't build tls connector");
 
 				// ngl I don't understand this part perfectly but it was online and it works
-				let mut stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
+				let mut stream_try = TcpStream::connect(format!("{}:{}", host, port));
 				let url = format!("ws{}://{}:{}", if sec { "s" } else { "" }, host, port);
 				let parsed_url = url::Url::parse(&url)
 					.expect(&format!("Failed to parse websocket URL: '{}'", url));
 
-				let mut tls_stream: Option<native_tls::TlsStream<std::net::TcpStream>> = None;
+				let mut tls_stream: Option<native_tls::TlsStream<TcpStream>> = None;
 
 				// gotta do a loop so that it keeps trying to re-connect if it fails initially
 				while tls_stream.is_none() {
@@ -180,8 +183,8 @@ impl MainApp {
 								state.hint_msg = "Websocket disconnected; retrying...".to_owned();
 								state.websocket_state = WebSocketState::Connecting;
 							}
-							std::thread::sleep(Duration::from_secs(2));
-							stream_try = std::net::TcpStream::connect(format!("{}:{}", host, port));
+							sleep(Duration::from_secs(2));
+							stream_try = TcpStream::connect(format!("{}:{}", host, port));
 						}
 					}
 				};
@@ -275,7 +278,7 @@ impl MainApp {
 		});
 	}
 
-	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
+	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Error> {
 		// gotta make sure we can actually access the settings
 		let (help_title, colorscheme) = if let Ok(set) = SETTINGS.read() {
 			(set.help_title.to_owned(), Colorscheme::from(&set.colorscheme))
@@ -399,7 +402,7 @@ impl MainApp {
 					let none_text = if let Ok(mut state) = STATE.write() {
 						// swap the new text out for `None`
 						let mut none_text: Option<Message> = None;
-						std::mem::swap(&mut none_text, &mut state.new_text);
+						swap(&mut none_text, &mut state.new_text);
 						none_text
 					} else { None };
 
@@ -754,9 +757,9 @@ impl MainApp {
 			DisplayBox::Help => {
 				// these comparisons are to ensure it doesn't scroll too far
 				if up {
-					self.help_scroll = std::cmp::max(self.help_scroll as i32 - distance as i32, 0) as u16;
+					self.help_scroll = max(self.help_scroll as i32 - distance as i32, 0) as u16;
 				} else {
-					self.help_scroll = std::cmp::min(HELP_MSG.len() as u16, self.help_scroll + distance);
+					self.help_scroll = min(HELP_MSG.len() as u16, self.help_scroll + distance);
 				}
 			},
 			_ => if let Ok(mut state) = STATE.write() {

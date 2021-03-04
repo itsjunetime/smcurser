@@ -9,14 +9,17 @@ mod input_view;
 mod state;
 mod utilities;
 
-use std::sync::{Arc, RwLock};
+use std::{
+	sync::{Arc, RwLock},
+	io::{Error, stdout},
+	env::args,
+};
 use lazy_static::*;
 use settings::*;
 use api_client_mod::*;
 use main_app::*;
 use state::GlobalState;
 use tui::{Terminal, backend::CrosstermBackend};
-use std::io;
 
 lazy_static! {
 	// set global variables. I know they're theoretically bad practice, but I've yet to find an
@@ -26,8 +29,8 @@ lazy_static! {
 	static ref STATE: Arc<RwLock<GlobalState>> = Arc::new(RwLock::new(GlobalState::new()));
 }
 
-fn main() -> Result<(), io::Error> {
-	let mut args = std::env::args().collect::<Vec<String>>();
+fn main() -> Result<(), Error> {
+	let mut args = args().collect::<Vec<String>>();
 	args.remove(0);
 	parse_args(args);
 
@@ -49,7 +52,7 @@ fn main() -> Result<(), io::Error> {
 		}
 	}
 
-	let stdout = io::stdout();
+	let stdout = stdout();
 	let backend = CrosstermBackend::new(stdout);
 	let mut terminal = Terminal::new(backend)?;
 

@@ -1,6 +1,9 @@
 use chrono::prelude::*;
 use notify_rust::Notification;
-use std::io::prelude::*;
+use std::{
+	io::prelude::*,
+	fs::OpenOptions,
+};
 use crate::*;
 
 pub struct Utilities;
@@ -35,7 +38,7 @@ impl Utilities {
 
 	#[allow(dead_code)]
 	pub fn log(log_str: &str) {
-		let mut file = std::fs::OpenOptions::new()
+		let mut file = OpenOptions::new()
 			.create(true)
 			.append(true)
 			.open("log.log")

@@ -9,7 +9,12 @@ use tui::{
 	style::Style,
 	terminal::Frame,
 };
-use std::vec::Vec;
+use std::{
+	vec::Vec,
+	cmp::{min, max},
+	fs::read_dir,
+	io::Stdout,
+};
 use crossterm::event::KeyCode;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -37,7 +42,7 @@ impl InputView {
 		}
 	}
 
-	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<io::Stdout>>, rect: Rect, selected: bool) {
+	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, rect: Rect, selected: bool) {
 		// get the colorscheme
 		let (mut title, colorscheme) = if let Ok(set) = SETTINGS.read() {
 			(set.input_title.to_owned(), Colorscheme::from(&set.colorscheme))
@@ -55,7 +60,7 @@ impl InputView {
 		if self.last_width != frame.size().width {
 			self.last_width = frame.size().width;
 			self.bounds.1 = UnicodeWidthStr::width(self.input.as_str()) as u16 - self.right_offset;
-			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - self.last_width as i32 - 2, 0) as u16;
+			self.bounds.0 = max(self.bounds.1 as i32 - self.last_width as i32 - 2, 0) as u16;
 		}
 
 		// here, we have to parse and display the input string as utf-8 graphemes instead of plain
@@ -64,7 +69,7 @@ impl InputView {
 
 		let graphemes = self.input.graphemes(true).collect::<Vec<&str>>();
 		let render_string =
-			&graphemes[self.bounds.0 as usize..std::cmp::min(graphemes.len(), self.bounds.1 as usize)]
+			&graphemes[self.bounds.0 as usize..min(graphemes.len(), self.bounds.1 as usize)]
 			.join("");
 
 		let input_span = vec![Spans::from(vec![Span::raw(render_string)])];
@@ -292,7 +297,7 @@ impl InputView {
 
 		// dir = the whole parent directory for the file they were entering
 		let dir = top_dirs.join(dir_char);
-		let dir_contents = std::fs::read_dir(&dir);
+		let dir_contents = read_dir(&dir);
 
 		match dir_contents {
 			Err(_) => return,
@@ -348,9 +353,9 @@ impl InputView {
 		let display_len = UnicodeWidthStr::width(self.input.as_str()) as u16;
 
 		if right {
-			self.right_offset = std::cmp::max(0, self.right_offset as i32 - distance as i32) as u16;
+			self.right_offset = max(0, self.right_offset as i32 - distance as i32) as u16;
 		} else {
-			self.right_offset = std::cmp::min(len, self.right_offset + distance);
+			self.right_offset = min(len, self.right_offset + distance);
 		}
 
 		// and this is the part that handles setting other variables to make sure it displays
@@ -377,13 +382,13 @@ impl InputView {
 
 			// set it so that the cursor will be at the farthest right end of the drawn input view
 			self.bounds.1 = len - self.right_offset;
-			self.bounds.0 = std::cmp::max(self.bounds.1 as i32 - (self.last_width as i32 - 3), 0) as u16;
+			self.bounds.0 = max(self.bounds.1 as i32 - (self.last_width as i32 - 3), 0) as u16;
 
 		} else if cursor_at_beginning {
 
 			// sets the cursor to the leftmost end of the drawn input view
 			self.bounds.0 = len - self.right_offset;
-			self.bounds.1 = std::cmp::min(self.bounds.0 + self.last_width - 3, len);
+			self.bounds.1 = min(self.bounds.0 + self.last_width - 3, len);
 
 		} else if less_than_view {
 			// just sets the bounds to the full string, basically, since its length is less than

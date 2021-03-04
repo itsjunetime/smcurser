@@ -2,6 +2,7 @@ use std::{
 	vec::Vec,
 	result::Result,
 	path::Path,
+	time::Duration,
 };
 use super::*;
 use models::*;
@@ -29,7 +30,7 @@ impl APIClient {
 
 		let client = reqwest::blocking::Client::builder()
 			.use_preconfigured_tls(tls)
-			.connect_timeout(std::time::Duration::from_secs(timeout as u64))
+			.connect_timeout(Duration::from_secs(timeout as u64))
 			.build()
 			.expect("Unable to build API Client");
 

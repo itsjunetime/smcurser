@@ -3,7 +3,12 @@ use crate::{
 	colorscheme::*,
 };
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{
+	collections::HashMap,
+	fs::read_to_string,
+	slice::Iter,
+};
+
 
 #[derive(Deserialize)]
 pub struct Settings {
@@ -308,7 +313,7 @@ impl Settings {
 	}
 
 	pub fn parse_config_file(&mut self) {
-		let contents_try = std::fs::read_to_string(&self.config_file);
+		let contents_try = read_to_string(&self.config_file);
 
 		if let Ok(contents) = contents_try {
 
@@ -337,7 +342,7 @@ impl Settings {
 	}
 
 	pub fn parse_custom_colorschemes(&mut self) {
-		let contents_try = std::fs::read_to_string(&self.colorscheme_file);
+		let contents_try = read_to_string(&self.colorscheme_file);
 
 		if let Ok(contents) = contents_try {
 
@@ -445,7 +450,7 @@ impl Settings {
 		}
 	}
 
-	fn get_u16_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<u16> {
+	fn get_u16_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> Option<u16> {
 		if let Some(to_parse) = it.next() {
 			if let Ok(value) = to_parse.parse() {
 				if tui_mode {
@@ -464,7 +469,7 @@ impl Settings {
 		}
 	}
 
-	fn get_string_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<String> {
+	fn get_string_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> Option<String> {
 		if let Some(value) = it.next() {
 			if tui_mode {
 				Utilities::print_msg(format!("set {} to {}", key, value), true);
@@ -477,7 +482,7 @@ impl Settings {
 		}
 	}
 
-	fn get_char_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> Option<char> {
+	fn get_char_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> Option<char> {
 		if let Some(value) = it.next() {
 			if let Ok(c) = value.parse() {
 				if tui_mode {
@@ -496,7 +501,7 @@ impl Settings {
 		}
 	}
 
-	fn get_bool_from_it(&self, it: &mut std::slice::Iter<String>, key: &str, tui_mode: bool) -> bool {
+	fn get_bool_from_it(&self, it: &mut Iter<String>, key: &str, tui_mode: bool) -> bool {
 		let b = match it.next() {
 			None => true,
 			Some(val) => val.parse().unwrap_or(true)
