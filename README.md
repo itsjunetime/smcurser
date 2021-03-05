@@ -20,6 +20,8 @@ SMCurser running on my desktop
 - Have something else you'd like added? File an issue or PR and I'll take a look at it :)
 
 ## To Build and Install
+You can download a fairly up-to-date version of SMCurser from the `Releases` section of this repository. However, it may not have all the latest features and updates, so I'd recommend building it from source with the following steps:
+
 First, install the official rust toolchain. If you don't know how to do this, visit [rustup.rs](https://rustup.rs) and follow the instructions there.
 
 Once you've got that completely installed, do the following:

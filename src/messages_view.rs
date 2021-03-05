@@ -382,7 +382,7 @@ impl MessagesView {
 			}
 
 			let att_line = if msg.is_from_me {
-				let space = self.last_width as usize - att_str.len();
+				let space = self.last_width as usize - 2 - att_str.len();
 				format!("{}{}", " ".repeat(space), att_str)
 			} else {
 				att_str
