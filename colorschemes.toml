@@ -1,10 +1,16 @@
+# This is an example custom colorschemes file.
+# The name of your custom colorscheme must be in the brackets above its values.
+# The integers in the array for each color represent red, blue, and green, respectively.
+# The integers must be from 0 - 255, inclusive.
+# You can define multiple custom colorschemes, just add each one underneath the last.
+
 [ugly]
-selected_box = [254, 0, 0]
-unselected_box = [0, 254, 0]
-my_underline = [0, 0, 254]
-their_underline = [254, 0, 0]
-selected_underline = [0, 254, 0]
-chat_indicator = [0, 0, 254]
-unread_indicator = [254, 0, 0]
-text_color = [0, 254, 0]
-hints_box = [0, 0, 254]
+selected_box = [255, 0, 0]
+unselected_box = [0, 255, 0]
+my_underline = [0, 0, 255]
+their_underline = [255, 0, 0]
+selected_underline = [0, 255, 0]
+chat_indicator = [0, 0, 255]
+unread_indicator = [255, 0, 0]
+text_color = [0, 255, 0]
+hints_box = [0, 0, 255]

@@ -1,22 +1,61 @@
+
+# `host` is the address of the device hosting SMServer.
+# It can be an IP Address or hostname
 host = "192.168.0.196"
+
+# `host` is the address of a fallback device hosting SMServer.
+# If SMCurser fails to connect to the host device, it will automatically
+# try the fallback device. You can also manually connect to the fallback
+# device with the `--use_fallback` flag.
 fallback_host = "10.37.68.248"
+
+# `server_port` is the port that the SMServer API is running on on
+# the host device.
 server_port = 8741
+
+# `socket_port` is the port that the SMServer websocket is running on
+# on the host device
 socket_port = 8740
 
+# `secure` tells SMCurser whether or not to connect to SMServer over TLS
 secure = true
+
+# `notifications` tells SMCurser whether or not to show notifications
+# when receiving a new text or when another party starts typing.
+# Notifications are sent from SMCurser regardless of whether or not
+# you have the app selected, since it has no way of knowing if it is selected or not
 notifications = true
+
+# `authenticated` tells SMCurser if you've already authenticated
+# with the host server
 authenticated = false
 
+# `password` is the password that SMCurser will use to authenticate
+# with the host server
 password = "toor"
+
+# `colorscheme` is the colorscheme that the interface will be drawn with.
+# The following colorschemes are built in:
+# `forest`, `rose-pine`, `hacker`, and `dracula`.
+# You are also free to create your own custom colorschemes, following the format
+# of the `colorschemes.toml` file in the SMCurser repo. Place your `colorschemes.toml`
+# in $USER_CONFIG_DIR/smcurser
 colorscheme = "dracula"
 
+# `chat_indicator` is the character that will show beside the
+# currently selected conversation
 chat_indicator = ">"
+
+# `unread_indicator` is the character that will show beside all
+# the conversations with unread messages
 unread_indicator = "•"
 
-my_chat_end = "⧹▏"
-their_chat_end = "▕⧸"
+# `chat_underline` is the character that will be used to underline
+# all of the messages shown in the interface
 chat_underline = "▔"
 
+# the following are all the titles of the various boxes that will be
+# shown while using SMCurser
 chats_title = "| chats |"
 messages_title = "| messages |"
 input_title = "| input here :) |"
@@ -24,6 +63,13 @@ help_title = "| help |"
 to_title = "| to: |"
 compose_title = "| message: |"
 
+# `poll_exit` is how much time SMCurser will wait between polling for input
 poll_exit = 10
+
+# `timeout` is the timeout for HTTP requests to SMServer (since SMCurser
+# uses a blocking HTTP client to connect with SMServer)
 timeout = 10
+
+# `show_help` defines whether or not you would like to see the help message
+# instead of actually running SMCurser
 show_help = false

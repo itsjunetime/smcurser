@@ -423,9 +423,9 @@ impl Settings {
 
 										for val in arr {
 											if let Some(uint) = val.as_integer() {
-												if uint > 254 || uint < 0 {
+												if uint > 255 || uint < 0 {
 													Utilities::print_msg(
-														format!("\x1b[18;1mError:\x1b[0m Please keep rgb values between 0 - 254, inclusive."),
+														format!("\x1b[18;1mError:\x1b[0m Please keep rgb values between 0 - 255, inclusive."),
 														false
 													);
 
@@ -436,7 +436,7 @@ impl Settings {
 												rgb.push(uint as u8);
 											} else {
 												Utilities::print_msg(
-													format!("\x1b[18;1mError:\x1b[0m RGB values must all be UInts, between 0 - 254, inclusive"),
+													format!("\x1b[18;1mError:\x1b[0m RGB values must all be UInts, between 0 - 255, inclusive"),
 													false
 												);
 

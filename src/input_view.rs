@@ -429,5 +429,7 @@ impl InputView {
 				}
 			}
 		}
+
+		self.scroll(false, 0);
 	}
 }
