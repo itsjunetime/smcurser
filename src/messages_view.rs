@@ -504,11 +504,11 @@ impl MessagesView {
 		let identifier = &self.messages[self.selected_msg as usize].guid;
 
 		// get the url to request to delete it
-		let del_url = if let Ok(set) = SETTINGS.read() {
-			set.delete_text_string(identifier)
-		} else { "".to_owned() };
+		let del_url_try = if let Ok(set) = SETTINGS.read() {
+			Some(set.delete_text_string(identifier))
+		} else { None };
 
-		if del_url.len() > 0 {
+		if let Some(del_url) = del_url_try {
 			// send the request to delete!
 			match APICLIENT.get_url_string(&del_url) {
 				Err(err) => if let Ok(mut state) = STATE.write() {

@@ -704,11 +704,11 @@ impl MainApp {
 				let chat = splits[0];
 
 				// get the url to talk to to delete this conversation
-				let del_str = if let Ok(set) = SETTINGS.read() {
-					set.delete_chat_string(&chat)
-				} else { "".to_owned() };
+				let del_str_try = if let Ok(set) = SETTINGS.read() {
+					Some(set.delete_chat_string(&chat))
+				} else { None };
 
-				if del_str.len() > 0 {
+				if let Some(del_str) = del_str_try {
 					// send the request
 					match APICLIENT.get_url_string(&del_str) {
 						Err(err) => if let Ok(mut state) = STATE.write() {

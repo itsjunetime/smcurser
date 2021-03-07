@@ -63,7 +63,6 @@ fn main() -> Result<(), Error> {
 
 fn parse_args(args: Vec<String>) {
 	let mut set = SETTINGS.write().expect("Couldn't open settings to write. Please try again or contact the developer.");
-	//set.parse_custom_colorschemes();
 	set.parse_args(args, false, true);
 }
 
