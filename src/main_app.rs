@@ -741,7 +741,7 @@ impl MainApp {
 			}
 		};
 
-		self.input_view.input = "".to_string();
+		self.input_view.handle_escape();
 	}
 
 	fn switch_selected_box(&mut self) {
