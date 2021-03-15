@@ -11,6 +11,8 @@ use std::{
 	cmp::{min, max},
 	io::Stdout,
 };
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub struct ChatsView {
 	pub scroll: u16,
@@ -117,9 +119,26 @@ impl ChatsView {
 						}
 					};
 
+					let display_len = UnicodeWidthStr::width(c.display_name.as_str());
+
 					// only show what part of the name will fit, with ellipsis.
-					let name = if c.display_name.len() > max_len {
-						format!("{}...", &c.display_name[..max_len - 3])
+					let name = if display_len > max_len {
+						let graphemes = c.display_name.graphemes(true).collect::<Vec<&str>>();
+
+						let num_graphemes = graphemes.iter()
+							.fold(0, |n, g| {
+								if n >= max_len - 3 {
+									return n;
+								}
+								let total = UnicodeWidthStr::width(*g) + n;
+								if total > max_len - 3 {
+									n
+								} else {
+									n + 1
+								}
+							});
+
+						format!("{}...", &graphemes[..num_graphemes].join(""))
 					} else {
 						c.display_name.to_owned()
 					};
