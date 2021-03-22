@@ -100,7 +100,7 @@ const HELP_MSG: [&str; 31] = [
 	"this deletes the currently selected text. There is no prompting, it immediately deletes it, so make sure that you are careful with this comand",
 ];
 
-const CMD_HELP: [&str; 51] = [
+const CMD_HELP: [&str; 53] = [
 	"usage: \x1b[1m./smcurser [options]\x1b[0m",
 	"",
 	"\x1b[1mOptions:\x1b[0m",
@@ -112,6 +112,8 @@ const CMD_HELP: [&str; 51] = [
 	"                                Default:",
 	"    \x1b[1m--server_port\x1b[0m <value>     : The port on which SMServer is running on the host device",
 	"                                Default: 8741",
+	"    \x1b[1m--socket_host\x1b[0m <value>     : The host on which the socket is running (generally not needed)",
+	"                                Default: Same as server host",
 	"    \x1b[1m--socket_port\x1b[0m <value>     : The port on which the SMServer websocket is running on the host device",
 	"                                Default: 8740",
 	"    \x1b[1m--secure\x1b[0m                  : Toggle connecting to a secure server",

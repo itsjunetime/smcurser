@@ -8,6 +8,8 @@ use std::{
 	fs::read_to_string,
 	slice::Iter,
 	iter::Peekable,
+	any::type_name,
+	str::FromStr,
 };
 
 
@@ -16,6 +18,7 @@ pub struct Settings {
 	pub host: String,
 	pub fallback_host: String,
 	pub server_port: u16,
+	pub socket_host: Option<String>,
 	pub socket_port: u16,
 	pub secure: bool,
 	pub notifications: bool,
@@ -65,6 +68,7 @@ impl Settings {
 			host: "".to_owned(),
 			fallback_host: "".to_owned(),
 			server_port: 8741,
+			socket_host: None,
 			socket_port: 8740,
 			secure: true,
 			notifications: true,
@@ -244,83 +248,87 @@ impl Settings {
 
 			match arg.replace("--", "").as_str() {
 				"host" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.host = s;
 					},
 				"fallback_host" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.fallback_host = s;
-					}
+					},
 				"server_port" =>
-					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
+					if let Some(u) = self.get_val_from_it::<u16>(&mut it, arg, tui_mode) {
 						self.server_port = u;
-					}
+					},
+				"socket_host" =>
+					if let Some(u) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
+						self.socket_host = Some(u);
+					},
 				"socket_port" =>
-					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
+					if let Some(u) = self.get_val_from_it::<u16>(&mut it, arg, tui_mode) {
 						self.socket_port = u;
-					}
+					},
 				"secure" =>
 					self.secure = self.get_bool_from_it(&mut it, arg, tui_mode),
 				"notifications" =>
 					self.notifications = self.get_bool_from_it(&mut it, arg, tui_mode),
 				"password" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.password = s;
 					},
 				"chat_indicator" =>
-					if let Some(c) = self.get_char_from_it(&mut it, arg, tui_mode) {
+					if let Some(c) = self.get_val_from_it::<char>(&mut it, arg, tui_mode) {
 						self.current_chat_indicator = c;
 					},
 				"unread_indicator" =>
-					if let Some(c) = self.get_char_from_it(&mut it, arg, tui_mode) {
+					if let Some(c) = self.get_val_from_it::<char>(&mut it, arg, tui_mode) {
 						self.unread_chat_indicator = c;
-					}
+					},
 				"my_chat_end" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.my_chat_end = s;
 					},
 				"their_chat_end" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.their_chat_end = s;
 					},
 				"chat_underline" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.chat_underline = s;
 					},
 				"chats_title" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.chats_title = s;
 					},
 				"messages_title" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.messages_title = s;
 					},
 				"input_title" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.input_title = s;
 					},
 				"help_title" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.help_title = s;
 					},
 				"to_title" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.to_title = s;
 					},
 				"compose_title" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.compose_title = s;
 					},
 				"colorscheme" =>
-					if let Some(s) = self.get_string_from_it(&mut it, arg, tui_mode) {
+					if let Some(s) = self.get_val_from_it::<String>(&mut it, arg, tui_mode) {
 						self.colorscheme = s;
 					},
 				"poll_exit" =>
-					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
+					if let Some(u) = self.get_val_from_it::<u16>(&mut it, arg, tui_mode) {
 						self.poll_exit = u;
 					},
 				"timeout" =>
-					if let Some(u) = self.get_u16_from_it(&mut it, arg, tui_mode) {
+					if let Some(u) = self.get_val_from_it::<u16>(&mut it, arg, tui_mode) {
 						self.timeout = u;
 					},
 				"use_fallback" =>
@@ -474,56 +482,26 @@ impl Settings {
 		}
 	}
 
-	fn get_u16_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> Option<u16> {
-		if let Some(to_parse) = it.peekable().peek() {
-			if let Ok(value) = to_parse.parse() {
-				let _ = it.next();
-				if tui_mode {
-					Utilities::print_msg(format!("set {} to {}", key, value), false);
+	fn get_val_from_it<T: FromStr + 'static>(
+		&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool
+	) -> Option<T> {
+		match it.peek() {
+			Some(to_parse) => match to_parse.parse() {
+				Ok(value) => {
+					let _ = it.next();
+					Some(value)
+				},
+				Err(_) => {
+					let pstr = format!("Please enter a value of type {:#?} for the key {}", type_name::<T>(), key);
+					Utilities::print_msg(pstr, tui_mode);
+					None
 				}
-				Some(value)
-			} else {
-				let pstr = format!("Please enter an integer value for the key {}", key);
+			},
+			None => {
+				let pstr = format!("Please enter a value for the key {}", key);
 				Utilities::print_msg(pstr, tui_mode);
 				None
 			}
-		} else {
-			let pstr = format!("Please enter a value for the key {}", key);
-			Utilities::print_msg(pstr, tui_mode);
-			None
-		}
-	}
-
-	fn get_string_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> Option<String> {
-		if let Some(value) = it.next() {
-			if tui_mode {
-				Utilities::print_msg(format!("set {} to {}", key, value), true);
-			}
-			Some(value.to_owned())
-		} else {
-			let pstr = format!("Please enter a value for the key {}", key);
-			Utilities::print_msg(pstr, tui_mode);
-			None
-		}
-	}
-
-	fn get_char_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> Option<char> {
-		if let Some(value) = it.peek() {
-			if let Ok(c) = value.parse() {
-				let _ = it.next();
-				if tui_mode {
-					Utilities::print_msg(format!("set {} to {}", key, c), true);
-				}
-				Some(c)
-			} else {
-				let pstr = format!("Please enter a single character for the key {}", key);
-				Utilities::print_msg(pstr, tui_mode);
-				None
-			}
-		} else {
-			let pstr = format!("Please enter a single character for the key {}", key);
-			Utilities::print_msg(pstr, tui_mode);
-			None
 		}
 	}
 

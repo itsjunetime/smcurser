@@ -137,7 +137,11 @@ impl MainApp {
 	fn setup_socket(&mut self) {
 		// would do an if let Ok() but that would be ugly. this is easier and should never panic
 		let set = SETTINGS.read().expect("Couldn't read settings");
-		let host = set.host.as_str().to_owned();
+		let host = if let Some(ho) = &set.socket_host {
+			ho.to_owned()
+		} else {
+			set.host.to_owned()
+		};
 		let port = set.socket_port;
 		let sec = set.secure;
 		drop(set);
