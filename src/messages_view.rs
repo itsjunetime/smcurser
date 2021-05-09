@@ -1,9 +1,9 @@
 use crate::*;
 use crate::models::*;
 use tui::{
-    layout::Rect,
-    text::{Span, Spans},
-    widgets::{Block, Borders, Paragraph, BorderType},
+	layout::Rect,
+	text::{Span, Spans},
+	widgets::{Block, Borders, Paragraph, BorderType},
 	style::{Style, Modifier},
 	terminal::Frame,
 };
@@ -474,7 +474,7 @@ impl MessagesView {
 	pub fn open_attachment(&self, idx: usize) {
 		// open an attachment in whatever method the system wants to use
 		let att_str = if let Ok(set) = SETTINGS.read() {
-			Some(set.attachment_string(self.attachments[idx].to_owned()))	
+			Some(set.attachment_string(self.attachments[idx].to_owned()))
 		} else {
 			None
 		};

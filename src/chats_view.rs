@@ -1,9 +1,9 @@
 use crate::*;
 use crate::models::*;
 use tui::{
-    layout::Rect,
-    text::{Span, Spans},
-    widgets::{Block, Borders, Paragraph, BorderType},
+	layout::Rect,
+	text::{Span, Spans},
+	widgets::{Block, Borders, Paragraph, BorderType},
 	style::Style,
 	terminal::Frame,
 };
