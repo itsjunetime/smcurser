@@ -22,8 +22,7 @@ use state::GlobalState;
 use tui::{Terminal, backend::CrosstermBackend};
 
 lazy_static! {
-	// set global variables. I know they're theoretically bad practice, but I've yet to find an
-	// easier way of managing global state.
+	// set global variables. I know they're theoretically bad practice, but it's just so easy :/
 	static ref SETTINGS: Arc<RwLock<Settings>> = Arc::new(RwLock::new(Settings::default()));
 	static ref APICLIENT: APIClient = APIClient::new();
 	static ref STATE: Arc<RwLock<GlobalState>> = Arc::new(RwLock::new(GlobalState::new()));

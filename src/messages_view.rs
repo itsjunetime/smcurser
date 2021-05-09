@@ -473,26 +473,31 @@ impl MessagesView {
 
 	pub fn open_attachment(&self, idx: usize) {
 		// open an attachment in whatever method the system wants to use
-		if let Ok(set) = SETTINGS.read() {
+		let att_str = if let Ok(set) = SETTINGS.read() {
+			Some(set.attachment_string(self.attachments[idx].to_owned()))	
+		} else {
+			None
+		};
 
-			if let Err(err) = open::that(
-				set.attachment_string(
-					self.attachments[idx].to_owned()
-				)) {
+		if let Some(att) = att_str {
+			std::thread::spawn(|| {
+				if let Err(err) = open::that(att) {
 
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg = format!("Unable to open link for attachment: {}", err);
+					if let Ok(mut state) = STATE.write() {
+						state.hint_msg =
+							format!("Unable to open link for attachment: {}", err);
+					}
+
 				}
-
-			}
+			});
 		}
 	}
 
 	pub fn delete_current_text(&mut self) -> bool {
 		// deletes the currently selected text
 
-		// first, check the index to make sure that it's in range (I don't know how it wouldn't be
-		// but we gotta take precautions)
+		// first, check the index to make sure that it's in range
+		// (I don't know how it wouldn't be but we gotta take precautions)
 		if self.messages.len() as u16 <= self.selected_msg {
 			if let Ok(mut state) = STATE.write() {
 				state.hint_msg = "failed to delete text (not enough messages)".to_owned();
