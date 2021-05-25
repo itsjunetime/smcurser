@@ -1,8 +1,7 @@
 mod settings;
 mod colorscheme;
-mod api_client_mod;
+mod app;
 mod models;
-mod main_app;
 mod chats_view;
 mod messages_view;
 mod input_view;
@@ -11,24 +10,26 @@ mod utilities;
 
 use std::{
 	sync::{Arc, RwLock},
-	io::{Error, stdout},
+	io::stdout,
 	env::args,
 };
 use lazy_static::*;
 use settings::*;
-use api_client_mod::*;
-use main_app::*;
+use app::*;
 use state::GlobalState;
 use tui::{Terminal, backend::CrosstermBackend};
 
 lazy_static! {
-	// set global variables. I know they're theoretically bad practice, but it's just so easy :/
-	static ref SETTINGS: Arc<RwLock<Settings>> = Arc::new(RwLock::new(Settings::default()));
-	static ref APICLIENT: APIClient = APIClient::new();
-	static ref STATE: Arc<RwLock<GlobalState>> = Arc::new(RwLock::new(GlobalState::new()));
+	// set global variables. I know they're theoretically bad practice,
+	// but it's just so easy :/
+	static ref SETTINGS: Arc<RwLock<Settings>> =
+		Arc::new(RwLock::new(Settings::default()));
+	static ref STATE: Arc<RwLock<GlobalState>> =
+		Arc::new(RwLock::new(GlobalState::new()));
 }
 
-fn main() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
 	let mut args = args().collect::<Vec<String>>();
 	args.remove(0);
 	parse_args(args);
@@ -43,10 +44,13 @@ fn main() -> Result<(), Error> {
 		}
 	}
 
-	// if they have specified no host, then exit (since you need a host to communicate with)
+	// if they have specified no host, then exit
+	// (since you need a host to communicate with)
 	if let Ok(set) = SETTINGS.read() {
-		if set.host.len() == 0 {
-			eprintln!("\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to");
+		if set.host.is_empty() && set.remote_addr.is_none() {
+			eprintln!(
+				"\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to"
+			);
 			return Ok(());
 		}
 	}
@@ -56,12 +60,19 @@ fn main() -> Result<(), Error> {
 	let mut terminal = Terminal::new(backend)?;
 
 	// go!
-	let mut main_app = MainApp::new();
-	main_app.main_loop(&mut terminal)
+	let main_app = MainApp::new().await;
+	match main_app {
+		Err(err) => {
+			eprintln!("Failed to create main app: {}", err);
+			Err(err)
+		}
+		Ok(mut app) => app.main_loop(&mut terminal).await
+	}
 }
 
 fn parse_args(args: Vec<String>) {
-	let mut set = SETTINGS.write().expect("Couldn't open settings to write. Please try again or contact the developer.");
+	let mut set = SETTINGS.write()
+		.expect("Couldn't open settings to write.");
 	set.parse_args(args, false, true);
 }
 
@@ -99,7 +110,7 @@ const HELP_MSG: [&str; 31] = [
 	"this deletes the currently selected text. There is no prompting, it immediately deletes it, so make sure that you are careful with this comand",
 ];
 
-const CMD_HELP: [&str; 53] = [
+const CMD_HELP: [&str; 57] = [
 	"usage: \x1b[1m./smcurser [options]\x1b[0m",
 	"",
 	"\x1b[1mOptions:\x1b[0m",
@@ -115,6 +126,10 @@ const CMD_HELP: [&str; 53] = [
 	"                                Default: Same as server host",
 	"    \x1b[1m--socket_port\x1b[0m <value>     : The port on which the SMServer websocket is running on the host device",
 	"                                Default: 8740",
+	"    \x1b[1m--remote_addr\x1b[0m <value>     : The address of the remote server which is hosting the websocket connections. If this value is specified, SMCurser will attempt to connect only through remote websockets, as opposed to the local REST API",
+	"                                Default: None",
+	"    \x1b[1m--remote_id\x1b[0m <value>       : The ID of the remote connection",
+	"                                Default: None",
 	"    \x1b[1m--secure\x1b[0m                  : Toggle connecting to a secure server",
 	"                                Default: true",
 	"    \x1b[1m--notifications\x1b[0m           : Toggle showing notifications or not",

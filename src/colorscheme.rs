@@ -35,7 +35,7 @@ impl<T: Into<String>> From<T> for Colorscheme {
 
 		match name.as_str() {
 			"forest" => Colorscheme {
-				name: name,
+				name,
 				selected_box: Color::Rgb(36, 139, 84),
 				unselected_box: Color::Rgb(28, 102, 83),
 				my_underline: Color::Rgb(101, 215, 253),
@@ -47,7 +47,7 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				hints_box: Color::Rgb(195, 137, 138),
 			},
 			"rose-pine" => Colorscheme {
-				name: name,
+				name,
 				selected_box: Color::Rgb(156, 207, 216),
 				unselected_box: Color::Rgb(49, 116, 143),
 				my_underline: Color::Rgb(196, 167, 231),
@@ -59,7 +59,7 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				hints_box: Color::Rgb(112, 110, 134),
 			},
 			"hacker" => Colorscheme {
-				name: name,
+				name,
 				selected_box: Color::Rgb(32, 160, 14),
 				unselected_box: Color::Rgb(120, 120, 120),
 				my_underline: Color::Rgb(32, 160, 14),
@@ -71,7 +71,7 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				hints_box: Color::Rgb(32, 160, 14),
 			},
 			"dracula" => Colorscheme {
-				name: name,
+				name,
 				selected_box: Color::Rgb(139, 233, 253),
 				unselected_box: Color::Rgb(98, 114, 164),
 				my_underline: Color::Rgb(189, 147, 249),
@@ -105,7 +105,7 @@ impl Colorscheme {
 			);
 
 		Colorscheme {
-			name: name,
+			name,
 			selected_box: Color::Rgb(sb[0], sb[1], sb[2]),
 			unselected_box: Color::Rgb(ub[0], ub[1], ub[2]),
 			my_underline: Color::Rgb(mu[0], mu[1], mu[2]),

@@ -25,8 +25,12 @@ impl Utilities {
 		image_dir.push("smcurser");
 		image_dir.push("icon.png");
 
-		let image_str = format!("file://{}",
-			image_dir.into_os_string().into_string().unwrap_or("".to_owned()));
+		let image_str = format!(
+			"file://{}",
+			image_dir.into_os_string()
+				.into_string()
+				.unwrap_or_else(|_| "".to_owned())
+		);
 
 		let _ = Notification::new()
 			.appname("SMCurser")

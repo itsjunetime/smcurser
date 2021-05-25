@@ -43,7 +43,11 @@ impl InputView {
 	}
 
 	pub fn draw_view(
-		&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, rect: Rect, selected: bool, take_cursor: bool
+		&mut self,
+		frame: &mut Frame<CrosstermBackend<Stdout>>,
+		rect: Rect,
+		selected: bool,
+		take_cursor: bool
 	) {
 		// get the colorscheme
 		let (mut title, colorscheme) = if let Ok(set) = SETTINGS.read() {
@@ -57,12 +61,18 @@ impl InputView {
 			title = custom.to_owned();
 		}
 
-		// if it's not the same width, the terminal has been resized. Reset some stuff so that
-		// everything doesn't spazz out when you try to draw it.
+		// if it's not the same width, the terminal has been resized. Reset some
+		// stuff so that everything doesn't spazz out when you try to draw it.
 		if self.last_width != frame.size().width {
 			self.last_width = frame.size().width;
-			self.bounds.1 = UnicodeWidthStr::width(self.input.as_str()) as u16 - self.right_offset;
-			self.bounds.0 = max(self.bounds.1 as i32 - self.last_width as i32 - 2, 0) as u16;
+			self.bounds.1 = UnicodeWidthStr::width(
+				self.input.as_str()
+			) as u16 - self.right_offset;
+
+			self.bounds.0 = max(
+				self.bounds.1 as i32 - self.last_width as i32 - 2,
+				0
+			) as u16;
 		}
 
 		// here, we have to parse and display the input string as utf-8 graphemes instead of plain
@@ -119,15 +129,16 @@ impl InputView {
 
 	pub fn append_char(&mut self, ch: char) {
 		// input it at the specified place
-		// also have to work with unicode here so that we don't insert in the middle of a utf char
+		// also have to work with unicode here so that we don't
+		// insert in the middle of a utf char
 		let mut graph = self.input.graphemes(true).collect::<Vec<&str>>();
-		let len = graph.iter().count();
+		let len = graph.len();
 
 		let ch_str = ch.to_string();
 		graph.insert(len - self.right_offset as usize, &ch_str);
 		self.input = graph.join("");
 
-		// scroll 0. This makes sure that the string will display nicely when redrawn
+		// scroll 0. This ensures that the string will display nicely when redrawn
 		self.scroll(true, 0);
 	}
 
@@ -140,10 +151,10 @@ impl InputView {
 	}
 
 	pub fn handle_backspace(&mut self) {
-		// have to handle this all as unicode so that people can backspace a whole unicode
-		// character
+		// have to handle this all as unicode so that people can backspace
+		// a whole unicode character
 		let mut graph = self.input.graphemes(true).collect::<Vec<&str>>();
-		let len = graph.iter().count();
+		let len = graph.len();
 
 		let index = len as i32 - self.right_offset as i32 - 1;
 		if index > -1 {
@@ -167,7 +178,7 @@ impl InputView {
 
 			self.handle_tab_completion();
 		} else {
-			self.input.push_str("	");
+			self.input.push('\t');
 		}
 	}
 
@@ -202,13 +213,14 @@ impl InputView {
 				curr_string.push(c);
 				escaped = false;
 			} else {
-				// if it's backslash, just let the next character in as part of the path, no matter
-				// what it is.
+				// if it's backslash, just let the next character in as part of the
+				// path, no matter what it is.
 				if c == '\\' {
 					escaped = true;
 				} else if c == '"' {
-					// if they're trying to end the quotes, then they're starting to list a new
-					// file. push the current file and reset the current string
+					// if they're trying to end the quotes, then they're starting
+					// to list a new file. push the current file and
+					// reset the current string
 					if in_quotes {
 						files.push(curr_string);
 						curr_string = "".to_owned();
@@ -217,10 +229,11 @@ impl InputView {
 					// and invert in_quotes no matter what
 					in_quotes = !in_quotes;
 				} else if c == ' ' || c == '\t' {
-					// if you get here, it's whitespace which is not escaped. They're ending one
-					// file entry and starting another; however, we have to make sure they've
-					// actually input part of a file before pushing it to the list
-					if curr_string.len() > 0 {
+					// if you get here, it's whitespace which is not escaped.
+					// They're ending one file entry and starting another; however,
+					// we have to make sure they've actually input part of a file
+					// before pushing it to the list
+					if !curr_string.is_empty() {
 						files.push(curr_string);
 						curr_string = "".to_owned();
 					}
@@ -229,18 +242,18 @@ impl InputView {
 		}
 
 		// push the current string where it's at
-		if curr_string.len() > 0 {
+		if !curr_string.is_empty() {
 			files.push(curr_string);
 		}
 
-		return files;
+		files
 	}
 
 	pub fn handle_tab_completion(&mut self) {
 		// So this is my messy attempt at tab completion. It actually works ok-ish
 		// I think it works on Windows but I can't say for certain
 
-		let mut splits = self.input.split(" ").collect::<Vec<&str>>();
+		let mut splits = self.input.split(' ').collect::<Vec<&str>>();
 		splits.remove(0);
 		let input = splits.join(" ");
 
@@ -249,7 +262,7 @@ impl InputView {
 		let incomplete_opt = self.get_typed_attachments(input);
 
 		// if there are no attachments input, just exit
-		if incomplete_opt.len() == 0 {
+		if incomplete_opt.is_empty() {
 			return;
 		}
 
@@ -275,7 +288,7 @@ impl InputView {
 		let mut to_drop = 0;
 
 		for c in top_dirs.iter().rev() {
-			if c.len() > 0 && c.chars().last().unwrap_or('-') == '\\' {
+			if !c.is_empty() && c.chars().last().unwrap_or('-') == '\\' {
 				to_drop += 1;
 			} else {
 				break;
@@ -298,49 +311,45 @@ impl InputView {
 		let dir = top_dirs.join(dir_char);
 		let dir_contents = read_dir(&dir);
 
-		match dir_contents {
-			Err(_) => return,
-			Ok(items) => {
-				for it in items {
-					if let Ok(item) = it {
-						let path = item.path();
+		if let Ok(items) = dir_contents {
+			for item in items.flatten() {
+				let path = item.path();
 
-						// tmp_path = the file or dir name (including dot
-						// between name and extension or trailing slash for directory
-						let tmp_path = format!("{}{}{}",
-							if let Some(fs) = path.file_stem() {
-								fs.to_str().unwrap_or("")
-							} else { "" },
-							if let Some(ex) = path.extension() {
-								format!(".{}", ex.to_str().unwrap_or(""))
-							} else { "".to_owned() },
-							if path.is_dir() {
-								dir_char
-							} else { "" }
-						);
+				// tmp_path = the file or dir name (including dot
+				// between name and extension or trailing slash for directory
+				let tmp_path = format!("{}{}{}",
+					if let Some(fs) = path.file_stem() {
+						fs.to_str().unwrap_or("")
+					} else { "" },
+					if let Some(ex) = path.extension() {
+						format!(".{}", ex.to_str().unwrap_or(""))
+					} else { "".to_owned() },
+					if path.is_dir() {
+						dir_char
+					} else { "" }
+				);
 
-						let path_str = tmp_path.as_str();
+				let path_str = tmp_path.as_str();
 
-						// if the file that is currently being iterated over is the same length or
-						// shorter than what they've input, don't even try to match it
-						if path_str.len() <= file.len() {
-							continue
-						}
-
-						// If it's a possibility for the file they were trying to input, auto-fill the
-						// input string with the whole file path
-						if path_str[..file.len()] == file {
-							let full_path = format!("{}{}{}", dir, dir_char, path_str);
-
-							self.input.truncate(self.input.len() - incomplete.len());
-							self.input = format!("{}{}", self.input, full_path);
-
-							self.last_width = 0;
-							break;
-						}
-					}
+				// if the file that is currently being iterated over is
+				// the same length or shorter than what they've input,
+				// don't even try to match it
+				if path_str.len() <= file.len() {
+					continue
 				}
-			},
+
+				// If it's a possibility for the file they were trying to input,
+				// auto-fill the input string with the whole file path
+				if path_str[..file.len()] == file {
+					let full_path = format!("{}{}{}", dir, dir_char, path_str);
+
+					self.input.truncate(self.input.len() - incomplete.len());
+					self.input = format!("{}{}", self.input, full_path);
+
+					self.last_width = 0;
+					break;
+				}
+			}
 		}
 	}
 
@@ -352,16 +361,21 @@ impl InputView {
 		let display_len = UnicodeWidthStr::width(self.input.as_str()) as u16;
 
 		if right {
-			self.right_offset = max(0, self.right_offset as i32 - distance as i32) as u16;
+			self.right_offset = max(
+				0,
+				self.right_offset as i32 - distance as i32
+			) as u16;
 		} else {
 			self.right_offset = min(len, self.right_offset + distance);
 		}
 
-		// and this is the part that handles setting other variables to make sure it displays
-		// nicely on the next redraw. Just suffice it to say this handles setting all these parameters to
-		// the correct values for the input field to be pretty
+		// and this is the part that handles setting other variables to make sure
+		// it displays nicely on the next redraw. Just suffice it to say this
+		// handles setting all these parameters to the correct values for the input
+		// field to be pretty
 		//
-		// also, we have to occasionally do stuff as i32s so that we can ensure it doesn't overflow
+		// also, we have to occasionally do stuff as i32s so that we can ensure
+		// it doesn't overflow
 
 		let display_len_to_offset = UnicodeWidthStr::width(
 			graphemes[0..(len - self.right_offset) as usize]
@@ -369,9 +383,9 @@ impl InputView {
 				.as_str()
 		) as u16;
 
-		//let greater_than_view = display_len_to_offset >= self.last_width - 2;
 		let greater_than_view = display_len_to_offset > self.last_width - 2;
-		let bound_before_end = self.bounds.1 as i32 <= display_len_to_offset as i32 - 1;
+		let bound_before_end =
+			(self.bounds.1 as i32) < display_len_to_offset as i32;
 
 		let cursor_at_beginning = display_len_to_offset <= self.bounds.0;
 
@@ -379,9 +393,13 @@ impl InputView {
 
 		if greater_than_view && bound_before_end {
 
-			// set it so that the cursor will be at the farthest right end of the drawn input view
+			// set it so that the cursor will be at the farthest right end
+			// of the drawn input view
 			self.bounds.1 = len - self.right_offset;
-			self.bounds.0 = max(self.bounds.1 as i32 - (self.last_width as i32 - 3), 0) as u16;
+			self.bounds.0 = max(
+				self.bounds.1 as i32 - (self.last_width as i32 - 3),
+				0
+			) as u16;
 
 		} else if cursor_at_beginning {
 
@@ -390,8 +408,8 @@ impl InputView {
 			self.bounds.1 = min(self.bounds.0 + self.last_width - 3, len);
 
 		} else if less_than_view {
-			// just sets the bounds to the full string, basically, since its length is less than
-			// the length of the view that it will be drawn in.
+			// just sets the bounds to the full string, basically, since its length
+			// is less than the length of the view that it will be drawn in.
 			self.bounds = (0, len);
 		}
 	}
@@ -401,7 +419,7 @@ impl InputView {
 		if up {
 			// if tabbing up, to older commands
 			match self.tabbed_up {
-				None => if self.last_commands.len() > 0 {
+				None => if !self.last_commands.is_empty() {
 					// if we haven't tabbed up at all, set it to 0 and grab the command
 					self.tabbed_up = Some(0);
 					self.input = self.last_commands[0].as_str().to_owned();

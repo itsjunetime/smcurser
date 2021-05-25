@@ -24,3 +24,8 @@ toml = "0.5.8"
 dirs = "3.0.1"
 notify-rust = { version = "4.3.0", features = ["image"] }
 unicode-width = "0.1.8"
+sdk = { package = "smserver-rs-sdk", path = "./smserver-rs-sdk" }
+tokio = { version = "1.6.0", features = ["full"] }
+anyhow = "1.0.40"
+futures = "0.3.1"
+futures-locks = "0.6"

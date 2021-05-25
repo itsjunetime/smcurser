@@ -1,4 +1,4 @@
-use crate::models::*;
+use sdk::models::*;
 
 pub struct GlobalState {
 	pub new_text: Option<Message>,

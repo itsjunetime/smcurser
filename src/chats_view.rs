@@ -1,5 +1,8 @@
 use crate::*;
-use crate::models::*;
+use sdk::{
+	models::*,
+	*,
+};
 use tui::{
 	layout::Rect,
 	text::{Span, Spans},
@@ -8,11 +11,12 @@ use tui::{
 	terminal::Frame,
 };
 use std::{
-	cmp::{min, max},
+	cmp::{min, max, Ordering},
 	io::Stdout,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+use futures_locks::RwLock;
 
 pub struct ChatsView {
 	pub scroll: u16,
@@ -21,29 +25,49 @@ pub struct ChatsView {
 	pub last_width: u16,
 	pub last_height: u16,
 	pub last_selected: Option<usize>,
+	pub client: Arc<RwLock<APIClient>>,
 }
 
 impl ChatsView {
-	pub fn new() -> ChatsView {
-		let chats = APICLIENT.get_chats(None, None);
+	pub async fn new(
+		client: Arc<RwLock<APIClient>>
+	) -> anyhow::Result<ChatsView> {
+		let mut api = client.write().await;
 
-		ChatsView {
+		let chats = match api.get_chats(None, None).await {
+			Ok(chs) => chs,
+			Err(err) => {
+				eprintln!("Failed to get chats: {}", err);
+				return Err(err);
+			}
+		};
+
+		drop(api);
+
+		Ok(ChatsView {
 			scroll: 0,
-			chats: chats,
 			chats_list: Vec::new(),
 			last_width: 0,
 			last_height: 0,
 			last_selected: None,
-		}
+			client,
+			chats,
+		})
 	}
 
-	pub fn draw_view(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, rect: Rect, is_selected: bool) {
+	pub fn draw_view(
+		&mut self,
+		frame: &mut Frame<CrosstermBackend<Stdout>>,
+		rect: Rect,
+		is_selected: bool
+	) {
 		// draws the view for this specific struct
 
 		if let Ok(set) = SETTINGS.read() {
 			let colorscheme = colorscheme::Colorscheme::from(&set.colorscheme);
 
-			// conditionally rerender the strings that make up the view; better performance
+			// conditionally rerender the strings that make up the view;
+			// better performance
 			if rect.width != self.last_width || rect.height != self.last_height {
 				self.rerender_list(rect);
 
@@ -54,20 +78,35 @@ impl ChatsView {
 			// create the list of spans, which are what is printed with `tui`.
 			let item_list: Vec<Spans> = self.chats_list.iter()
 				.fold(Vec::new(), |mut s, c| {
-					let (num, rest) = c.split_at(4); // that's where the symbol will be
-					let symbol = rest.chars().nth(0).unwrap_or(' ');
+					// that's where the symbol will be
+					let (num, rest) = c.split_at(4);
+					let symbol = rest.chars().next().unwrap_or(' ');
 
 					// conditionally color the symbol and create its span
 					let spans = vec![
-						Span::styled(num, Style::default().fg(colorscheme.text_color)),
+						Span::styled(
+							num,
+							Style::default().fg(colorscheme.text_color)
+						),
 						match symbol {
 							_ if symbol == set.current_chat_indicator =>
-								Span::styled(String::from(symbol), Style::default().fg(colorscheme.chat_indicator)),
+								Span::styled(
+									symbol.to_string(),
+									Style::default()
+										.fg(colorscheme.chat_indicator)
+								),
 							_ if symbol == set.unread_chat_indicator =>
-								Span::styled(String::from(symbol), Style::default().fg(colorscheme.unread_indicator)),
+								Span::styled(
+									symbol.to_string(),
+									Style::default()
+										.fg(colorscheme.unread_indicator)
+								),
 							_ => Span::raw(" "),
 						},
-						Span::styled(rest.replacen(symbol, "", 1), Style::default().fg(colorscheme.text_color)),
+						Span::styled(
+							rest.replacen(symbol, "", 1),
+							Style::default().fg(colorscheme.text_color)
+						),
 					];
 
 					// add spacing and line of text
@@ -103,27 +142,28 @@ impl ChatsView {
 
 		if let Ok(set) = SETTINGS.read() {
 
-			// iterate over all of them and create the list of strings that will be printed
+			// iterate over all of them and create the list of strings
+			// that will be printed
 			self.chats_list = self.chats.iter()
 				.enumerate()
 				.map(|(i, c)| {
-					// get symbol for the chat that will represent whether it has an unread
-					// message, is selected, or neither.
+					// get symbol for the chat that will represent whether
+					// it has an unread message, is selected, or neither.
 					let symbol = if c.is_selected {
 						set.current_chat_indicator
+					} else if c.has_unread {
+						set.unread_chat_indicator
 					} else {
-						if c.has_unread {
-							set.unread_chat_indicator
-						} else {
-							' '
-						}
+						' '
 					};
 
-					let display_len = UnicodeWidthStr::width(c.display_name.as_str());
+					let display_len = UnicodeWidthStr::width(
+						c.display_name.as_str());
 
 					// only show what part of the name will fit, with ellipsis.
 					let name = if display_len > max_len {
-						let graphemes = c.display_name.graphemes(true).collect::<Vec<&str>>();
+						let graphemes = c.display_name.graphemes(true)
+							.collect::<Vec<&str>>();
 
 						let num_graphemes = graphemes.iter()
 							.fold(0, |n, g| {
@@ -148,7 +188,8 @@ impl ChatsView {
 						if i < 100 { " " } else { "" },
 						if i < 10 { " " } else { "" },
 						i
-					); // I'm just gonna hope that nobody is going 1000 chats deep lol
+					);
+					// I'm just gonna hope that nobody is going 1000 chats deep :/
 
 					// like '  0 > John Smith         '
 					format!("{} {} {}", idx, symbol, name)
@@ -157,7 +198,7 @@ impl ChatsView {
 		}
 	}
 
-	pub fn scroll(&mut self, up: bool, distance: u16) {
+	pub async fn scroll(&mut self, up: bool, distance: u16) {
 		// allow people to scroll multiple lines at once
 		if !up {
 			// only scroll to lower limit
@@ -166,7 +207,24 @@ impl ChatsView {
 
 			// load in new texts automatically if you hit the limit
 			if self.scroll == max {
-				let mut new_chats = APICLIENT.get_chats(None, Some(self.chats.len() as i64));
+
+				let mut api = self.client.write().await;
+
+				let mut new_chats = match api.get_chats(
+					None,
+					Some(self.chats.len() as u32)
+				).await {
+					Ok(chs) => chs,
+					Err(err) => {
+						if let Ok(mut state) = STATE.write() {
+							state.hint_msg =
+								format!("couldn't get chats: {}", err)
+						}
+						Vec::new()
+					},
+				};
+
+				drop(api);
 
 				self.chats.append(&mut new_chats);
 				self.last_height = 0;
@@ -189,14 +247,15 @@ impl ChatsView {
 		chat.is_selected = true;
 
 		self.last_selected = Some(idx);
-		self.last_height = 0; // kinda dirty trick to force it to redraw the list next time
+		// kinda dirty trick to force it to redraw the list next time
+		self.last_height = 0;
 	}
 
-	pub fn new_text(&mut self, item: &Message) -> Option<usize> {
+	pub async fn new_text(&mut self, item: &Message) -> Option<usize> {
 		let mut ret: Option<usize> = None;
 
-		// Make sure that the new text has a chat identifier -- it should, if it came through the
-		// WebSocket, which it must have.
+		// Make sure that the new text has a chat identifier -- it should,
+		// if it came through the WebSocket, which it must have.
 		if let Some(id) = &item.chat_identifier {
 			// check if the conversation already is on the list that is showing.
 			let chat = self.chats.iter().position(|c| c.chat_identifier == *id);
@@ -210,29 +269,50 @@ impl ChatsView {
 				// last_selected specifies the conversation whose messages
 				// are currently being viewed
 				if let Some(ls) = self.last_selected {
-					// if it's this conversation thatis selected...
-					if idx == ls {
-						// set the selected index to 0, since this will be at the top.
-						self.last_selected = Some(0);
-						// also set it back to unread since you currently have it selected
-						old_chat.has_unread = false;
-					} else if idx > ls {
-						// if the new text conversation will be moved to a place before
-						// the currently selected conversation in the list, increase the currently
-						// selected index.
-						self.last_selected = Some(ls + 1);
+					// if it's this conversation that is selected...
+					match idx.cmp(&ls) {
+						Ordering::Equal => {
+							// set the selected index to 0,
+							// since this will be at the top.
+							self.last_selected = Some(0);
+							// also set it back to unread since you
+							// currently have it selected
+							old_chat.has_unread = false;
+						},
+						Ordering::Greater => {
+							// if the new text conversation will be moved to a
+							// place before the currently selected conversation in
+							// the list, increase the currently selected index.
+							self.last_selected = Some(ls + 1);
+						}
+						_ => ()
 					}
 				}
 
-				// ret will contain the old index of the chat that contains this conversation
+				// ret will contain the old index of the chat
+				// that contains this conversation
 				ret = chat;
 
 				// insert it at the top
 				self.chats.insert(0, old_chat);
 			} else {
-				// get the name of the conversation -- it's the only information we need to create
-				// a new Conversation object.
-				let name = APICLIENT.get_name(id);
+				// get the name of the conversation -- it's the only information
+				// we need to create a new Conversation object.
+				//let name = if let Ok(mut api) = self.client.write() {
+				let mut api = self.client.write().await;
+
+				let name = match api.get_name(id).await {
+					Ok(name) => name,
+					Err(err) => {
+						if let Ok(mut state) = STATE.write() {
+							state.hint_msg =
+								format!("Couldn't get name: {}", err);
+						}
+						id.to_owned()
+					}
+				};
+
+				drop(api);
 
 				let new_convo = Conversation {
 					display_name: name,
@@ -243,8 +323,8 @@ impl ChatsView {
 					is_selected: false
 				};
 
-				// Must increase the currently selected index if one is selected, since this chat
-				// won't be on the list.
+				// Must increase the currently selected index if one is selected,
+				// since this chat won't be on the list.
 				if let Some(ls) = self.last_selected {
 					self.last_selected = Some(ls + 1);
 				}
@@ -260,7 +340,14 @@ impl ChatsView {
 		ret
 	}
 
-	pub fn reload_chats(&mut self)  {
-		self.chats = APICLIENT.get_chats(None, None);
+	pub async fn reload_chats(&mut self)  {
+		let mut api = self.client.write().await;
+
+		match api.get_chats(None, None).await {
+			Ok(chs) => self.chats = chs,
+			Err(err) => if let Ok(mut state) = STATE.write() {
+				state.hint_msg = format!("couldn't get chats: {}", err);
+			}
+		}
 	}
 }
