@@ -623,8 +623,15 @@ impl MessagesView {
 
 	pub fn open_attachment(&self, idx: usize) {
 		// Download the attachment to their downloads directory
-		let mut down_dir = dirs::download_dir()
-			.expect("Cannot get download directory");
+		let mut down_dir = match dirs::download_dir() {
+			Some(dir) => dir,
+			None => {
+				let mut dir =dirs::home_dir()
+					.expect("Can't get download directory or home directory");
+				dir.push("Downloads");
+				dir
+			}
+		};
 
 		let att_name = self.attachments[idx].to_owned();
 

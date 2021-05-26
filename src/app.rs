@@ -157,7 +157,7 @@ impl MainApp {
 							APICommand::NewMessage => {
 								let text = msg.new_message_data()
 									.expect("Cannot turn SocketResponse \
-										into TypingNotification");
+										into NewMessageNotification");
 
 								if let Ok(mut state) = STATE.write() {
 									state.new_text = Some(text.message);
