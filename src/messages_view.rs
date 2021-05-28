@@ -364,7 +364,7 @@ impl MessagesView {
 
 		self.messages = match api.get_messages(id, None, None, None).await {
 			Ok(msgs) => msgs,
-			Err(err) => return Err(err.into()),
+			Err(err) => return Err(err),
 		};
 
 		drop(api);

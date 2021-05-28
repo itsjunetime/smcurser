@@ -633,7 +633,7 @@ impl MainApp {
 			// quit the app
 			":q" => self.quit_app = true,
 			// select a chat
-			":c" => if !splits.is_empty() {
+			":c" => if !splits.is_empty() && !splits[0].is_empty() {
 				let index = splits[0].parse::<usize>();
 				match index {
 					Ok(idx) => self.load_in_conversation(idx).await,

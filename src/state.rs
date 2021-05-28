@@ -37,6 +37,6 @@ impl GlobalState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum WebSocketState {
 	Connected,
-	Connecting,
+	//Connecting,
 	Disconnected,
 }
