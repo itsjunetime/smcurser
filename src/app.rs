@@ -136,42 +136,32 @@ impl MainApp {
 		receiver: mpsc::Receiver<sdk::socket::SocketResponse>
 	) {
 		tokio::spawn(async move {
-			loop {
-				match receiver.recv() {
-					Ok(msg) => {
-						match msg.command {
-							APICommand::Typing => {
-								let typ = msg.typing_data()
-									.expect("Cannot turn SocketResponse
-										into TypingNotification");
+			while let Ok(msg) = receiver.recv() {
+				match msg.command {
+					APICommand::Typing => {
+						let typ = msg.typing_data()
+							.expect("Cannot turn SocketResponse
+								into TypingNotification");
 
-								let new_text = match typ.active {
-									true => Message::typing(&typ.chat),
-									_ => Message::idle(&typ.chat)
-								};
+						let new_text = match typ.active {
+							true => Message::typing(&typ.chat),
+							_ => Message::idle(&typ.chat)
+						};
 
-								if let Ok(mut state) = STATE.write() {
-									state.new_text = Some(new_text);
-								}
-							},
-							APICommand::NewMessage => {
-								let text = msg.new_message_data()
-									.expect("Cannot turn SocketResponse \
-										into NewMessageNotification");
-
-								if let Ok(mut state) = STATE.write() {
-									state.new_text = Some(text.message);
-								}
-							},
-							_ => (),
+						if let Ok(mut state) = STATE.write() {
+							state.new_text = Some(new_text);
 						}
 					},
-					Err(err) => if let Ok(mut state) = STATE.write() {
-						state.hint_msg = format!(
-							"Error: Failed to receive msg from websocket: {}",
-							err
-						);
-					}
+					APICommand::NewMessage => {
+						let text = msg.new_message_data()
+							.expect("Cannot turn SocketResponse \
+								into NewMessageNotification");
+
+						if let Ok(mut state) = STATE.write() {
+							state.new_text = Some(text.message);
+						}
+					},
+					_ => (),
 				}
 			}
 		});
