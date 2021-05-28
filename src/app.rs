@@ -427,8 +427,10 @@ impl MainApp {
 						match self.selected_box {
 							DisplayBox::ComposeBody =>
 								self.compose_body_view.route_keycode(code),
+
 							DisplayBox::ComposeAddress =>
 								self.address_view.route_keycode(code),
+
 							_ => {
 								self.input_view.route_keycode(code);
 								if code == KeyCode::Backspace &&
@@ -451,9 +453,11 @@ impl MainApp {
 								// just like in the real iMessage app.
 								self.selected_box =
 									DisplayBox::ComposeBody;
-								self.msgs_view
+
+								let _ = self.msgs_view
 									.load_in_conversation(
-										&self.address_view.input).await;
+										&self.address_view.input
+									).await;
 							},
 							DisplayBox::ComposeBody => {
 								let chat = &self.address_view.input;
@@ -616,8 +620,10 @@ impl MainApp {
 	async fn handle_full_input(&mut self) {
 		// add the command that it's handling to the most recent commands
 		// so you can tab up to it
-		self.input_view.last_commands.insert(
-			0, self.input_view.input.to_owned());
+		self.input_view.last_commands
+			.insert(
+				0, self.input_view.input.to_owned()
+			);
 
 		// cmd is the first bit before a space, e.g. the ':s' in ':s hey friend'
 		let mut splits = self.input_view.input.split(' ').collect::<Vec<&str>>();
@@ -682,7 +688,7 @@ impl MainApp {
 			// start a new composition
 			":n" => {
 				self.selected_box = DisplayBox::ComposeAddress;
-				self.msgs_view.load_in_conversation("").await;
+				let _ = self.msgs_view.load_in_conversation("").await;
 
 				self.compose_body_view.input = "".to_owned();
 				self.address_view.input = "".to_owned();
@@ -705,7 +711,15 @@ impl MainApp {
 						let load = self.msgs_view.load_in_conversation(&chat);
 						let reload = self.chats_view.reload_chats();
 
-						load.await;
+						if let Err(err) = load.await {
+							if let Ok(mut state) = STATE.write() {
+								state.hint_msg = format!(
+									"Unable to load in messages for {}: {}",
+									chat,
+									err
+								);
+							}
+						}
 						reload.await;
 					}
 				}
@@ -715,27 +729,51 @@ impl MainApp {
 				// this is if they specified a conversation to delete
 				let chat = splits[0];
 
-				{
-					let mut api = self.client.write().await;
+				let mut api = self.client.write().await;
 
-					match api.delete_chat(&chat).await {
-						Err(err) => if let Ok(mut state) = STATE.write() {
+				let success = match api.delete_chat(&chat).await {
+					Err(err) => {
+						if let Ok(mut state) = STATE.write() {
 							state.hint_msg =
 								format!(
-									"Failed to delete conversation: {}", err);
-						},
-						Ok(_) => {
-							if let Ok(mut state) = STATE.write() {
-								state.hint_msg =
-									"deleted conversation :)".to_owned();
-							}
+									"Failed to delete conversation: {}",
+									err
+								);
+						}
+						false
+					},
+					Ok(_) => {
+						if let Ok(mut state) = STATE.write() {
+							state.hint_msg =
+								"deleted conversation :)".to_owned();
+						}
 
-							// reload chats so that it doesn't show up anymore
-							self.chats_view.reload_chats().await;
+						// reload chats so that it doesn't show up anymore
+						//self.chats_view.reload_chats().await;
+						true
+					},
+				};
+
+				drop(api);
+
+				if success {
+					self.chats_view.reload_chats().await;
+
+					if let Some(ls) = self.selected_chat {
+						let sel_chat = &self.chats_view.chats[ls]
+							.chat_identifier;
+
+						if sel_chat.as_str() == chat {
+							if let Err(err) = self.msgs_view.load_in_conversation("").await {
+								if let Ok(mut state) = STATE.write() {
+									state.hint_msg = format!("Unable to reload messages: {}", err);
+								}
+							}
 						}
 					}
-				}
 
+					self.selected_chat = None;
+				}
 			} else if let Some(ls) = self.selected_chat {
 				// if they didn't specify a conversation,
 				// let them know how to delete this conversation
@@ -757,6 +795,7 @@ impl MainApp {
 			}
 		};
 
+		// to reset the input view to no input
 		self.input_view.handle_escape();
 	}
 

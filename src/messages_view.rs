@@ -214,8 +214,12 @@ impl MessagesView {
 
 					// do attachments
 					for att in msg.attachments.iter() {
+						let filename = att.path.split('/')
+							.last()
+							.unwrap_or_default();
+
 						let att_str = format!("Attachment {}: {}",
-							att_temp.len(), att.mime_type);
+							att_temp.len(), filename);
 
 						if att_str.len() > max {
 							max = att_str.len();

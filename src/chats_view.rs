@@ -349,5 +349,7 @@ impl ChatsView {
 				state.hint_msg = format!("couldn't get chats: {}", err);
 			}
 		}
+
+		self.last_height = 0;
 	}
 }
