@@ -24,65 +24,72 @@ impl<T: Into<String>> From<T> for Colorscheme {
 
 		if let Ok(set) = SETTINGS.read() {
 			if let Some(ref colors) = set.custom_colorschemes {
-				for color in colors {
-					if color.name == name {
-						return color.to_owned();
-					}
+				if let Some(cl) = colors.iter().find(|c| c.name == name) {
+					return cl.to_owned();
 				}
 			}
 		}
 
-		match name.as_str() {
-			"forest" => Colorscheme {
-				name,
-				selected_box: Color::Rgb(36, 139, 84),
-				unselected_box: Color::Rgb(28, 102, 83),
-				my_underline: Color::Rgb(101, 215, 253),
-				their_underline: Color::Rgb(134, 95, 96),
-				selected_underline: Color::Rgb(245, 111, 66),
-				chat_indicator: Color::Rgb(30, 141, 199),
-				unread_indicator: Color::Rgb(245, 111, 66),
-				text_color: Color::White,
-				hints_box: Color::Rgb(195, 137, 138),
-			},
-			"rose-pine" => Colorscheme {
-				name,
-				selected_box: Color::Rgb(156, 207, 216),
-				unselected_box: Color::Rgb(49, 116, 143),
-				my_underline: Color::Rgb(196, 167, 231),
-				their_underline: Color::Rgb(235, 188, 186),
-				selected_underline: Color::Rgb(156, 207, 216),
-				chat_indicator: Color::Rgb(246, 193, 119),
-				unread_indicator: Color::Rgb(235, 111, 146),
-				text_color: Color::Rgb(224, 222, 244),
-				hints_box: Color::Rgb(112, 110, 134),
-			},
-			"hacker" => Colorscheme {
-				name,
-				selected_box: Color::Rgb(32, 160, 14),
-				unselected_box: Color::Rgb(120, 120, 120),
-				my_underline: Color::Rgb(32, 160, 14),
-				their_underline: Color::Rgb(120, 120, 120),
-				selected_underline: Color::White,
-				chat_indicator: Color::Rgb(32, 160, 14),
-				unread_indicator: Color::Rgb(32, 160, 14),
-				text_color: Color::Rgb(236, 236, 236),
-				hints_box: Color::Rgb(32, 160, 14),
-			},
-			"dracula" => Colorscheme {
-				name,
-				selected_box: Color::Rgb(139, 233, 253),
-				unselected_box: Color::Rgb(98, 114, 164),
-				my_underline: Color::Rgb(189, 147, 249),
-				their_underline: Color::Rgb(68, 71, 90),
-				selected_underline: Color::Rgb(80, 250, 123),
-				chat_indicator: Color::Rgb(255, 121, 198),
-				unread_indicator: Color::Rgb(255, 184, 108),
-				text_color: Color::Rgb(248, 248, 242),
-				hints_box: Color::Rgb(80, 250, 123),
-			},
-			_ => Colorscheme::from("forest"),
-		}
+
+		let vals = match name.as_str() {
+			"rose-pine" => [
+				[156, 207, 216],
+				[49, 116, 143],
+				[196, 167, 231],
+				[235, 188, 186],
+				[156, 207, 216],
+				[246, 193, 119],
+				[235, 111, 146],
+				[224, 222, 244],
+				[112, 110, 134],
+			],
+			"hacker" => [
+				[32, 160, 14],
+				[120, 120, 120],
+				[32, 160, 14],
+				[120, 120, 120],
+				[255, 255, 255],
+				[32, 160, 14],
+				[32, 160, 14],
+				[236, 236, 236],
+				[32, 160, 14],
+			],
+			"dracula" => [
+				[139, 233, 253],
+				[98, 114, 164],
+				[189, 147, 249],
+				[68, 71, 90],
+				[80, 250, 123],
+				[255, 121, 198],
+				[255, 184, 108],
+				[248, 248, 242],
+				[80, 250, 123],
+			],
+			_ => [ // forest
+				[36, 139, 84],
+				[28, 102, 83],
+				[101, 215, 253],
+				[134, 95, 96],
+				[245, 111, 66],
+				[30, 141, 199],
+				[245, 111, 66],
+				[255, 255, 255],
+				[195, 137, 138]
+			],
+		};
+
+		Colorscheme {
+			name,
+			selected_box: Color::Rgb(vals[0][0], vals[0][1], vals[0][2]),
+			unselected_box: Color::Rgb(vals[1][0], vals[1][1], vals[1][2]),
+			my_underline: Color::Rgb(vals[2][0], vals[2][1], vals[2][2]),
+			their_underline: Color::Rgb(vals[3][0], vals[3][1], vals[3][2]),
+			selected_underline: Color::Rgb(vals[4][0], vals[4][1], vals[4][2]),
+			chat_indicator: Color::Rgb(vals[5][0], vals[5][1], vals[5][2]),
+			unread_indicator: Color::Rgb(vals[6][0], vals[6][1], vals[6][2]),
+			text_color: Color::Rgb(vals[7][0], vals[7][1], vals[7][2]),
+			hints_box: Color::Rgb(vals[8][0], vals[8][1], vals[8][2]),
+ 		}
 	}
 }
 

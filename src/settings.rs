@@ -11,16 +11,55 @@ use std::{
 	iter::Peekable,
 	any::type_name,
 	str::FromStr,
+	path::PathBuf
 };
 
+pub fn default_config() -> String {
+	let mut conf = config_dir();
+	conf.push("smcurser");
+	conf.set_extension("toml");
+
+	(*conf.to_string_lossy()).to_string()
+}
+
+pub fn default_colorschemes() -> String {
+	let mut conf = config_dir();
+	conf.push("colorschemes");
+	conf.set_extension("toml");
+
+	(*conf.to_string_lossy()).to_string()
+}
+
+pub fn config_dir() -> PathBuf {
+	let mut conf = dirs::config_dir()
+		.unwrap_or_else(|| {
+			let mut home = dirs::home_dir()
+				.expect("Unable to get your home directory");
+
+			if cfg!(windows) {
+				home.push("AppData");
+				home.push("Local");
+			} else if cfg!(target_os = "macos") {
+				home.push("Library");
+				home.push("Application Support");
+			} else {
+				home.push(".config");
+			}
+
+			home
+		});
+
+	conf.push("smcurser");
+	conf
+}
 
 pub struct Settings {
-	pub host: String,
+	pub rest_host: String,
 	pub fallback_host: String,
-	pub server_port: u16,
+	pub rest_port: u16,
 	pub socket_host: Option<String>,
 	pub socket_port: u16,
-	pub remote_addr: Option<String>,
+	pub remote_url: Option<String>,
 	pub remote_id: Option<String>,
 	pub secure: bool,
 	pub notifications: bool,
@@ -28,8 +67,6 @@ pub struct Settings {
 	pub password: String,
 	pub current_chat_indicator: char,
 	pub unread_chat_indicator: char,
-	pub my_chat_end: String,
-	pub their_chat_end: String,
 	pub chat_underline: String,
 	pub chats_title: String,
 	pub messages_title: String,
@@ -38,7 +75,7 @@ pub struct Settings {
 	pub to_title: String,
 	pub compose_title: String,
 	pub colorscheme: String,
-	pub poll_exit: u16,
+	pub poll_input: u16,
 	pub timeout: u16,
 	pub show_help: bool,
 	pub config_file: String,
@@ -48,36 +85,13 @@ pub struct Settings {
 
 impl Settings {
 	pub fn default() -> Settings {
-		let (config_file, colorscheme_file) = {
-			let mut config_dir = dirs::config_dir()
-				.expect("Cannot detect your system's configuration directory.
-					Please file an issue with the maintainer");
-
-			config_dir.push("smcurser");
-			let mut colorscheme_dir = config_dir.clone();
-
-			config_dir.push("smcurser");
-			config_dir.set_extension("toml");
-
-			let config = config_dir.into_os_string()
-				.into_string()
-				.unwrap_or_else(|_| "".to_owned());
-
-			colorscheme_dir.push("colorschemes");
-			colorscheme_dir.set_extension("toml");
-			let colorschemes = colorscheme_dir.into_os_string()
-				.into_string()
-				.unwrap_or_else(|_| "".to_owned());
-			(config, colorschemes)
-		};
-
 		Settings {
-			host: "".to_owned(),
+			rest_host: "".to_owned(),
 			fallback_host: "".to_owned(),
-			server_port: 8741,
+			rest_port: 8741,
 			socket_host: None,
 			socket_port: 8740,
-			remote_addr: None,
+			remote_url: None,
 			remote_id: None,
 			secure: true,
 			notifications: true,
@@ -85,8 +99,6 @@ impl Settings {
 			password: "toor".to_owned(),
 			current_chat_indicator: '>',
 			unread_chat_indicator: '•',
-			my_chat_end: "⧹▏".to_owned(),
-			their_chat_end: "▕⧸".to_owned(),
 			chat_underline: "▔".to_owned(),
 			chats_title: "| chats |".to_owned(),
 			messages_title: "| messages |".to_owned(),
@@ -95,24 +107,26 @@ impl Settings {
 			to_title: "| to: |".to_owned(),
 			compose_title: "| message: |".to_owned(),
 			colorscheme: "forest".to_owned(),
-			poll_exit: 10,
+			poll_input: 10,
 			timeout: 10,
 			show_help: false,
 			custom_colorschemes: None,
-			config_file,
-			colorscheme_file,
+			config_file: default_config(),
+			colorscheme_file: default_colorschemes(),
 		}
 	}
 
-	pub fn set_fallback_as_host(&mut self) {
-		std::mem::swap(&mut self.fallback_host, &mut self.host);
-	}
+	/*pub fn set_fallback_as_host(&mut self) {
+		std::mem::swap(&mut self.fallback_host, &mut self.rest_host);
+	}*/
 
 	pub fn parse_args(
 		&mut self, mut args: Vec<String>, tui_mode: bool, parse_config: bool
 	) {
 		if parse_config {
-			let conf_pos = args.iter().position(|a| a.as_str() == "--config");
+			let conf_pos = args.iter().position(|a|
+				a.as_str() == "--config" || a.as_str() == "-c"
+			);
 
 			if let Some(p) = conf_pos {
 				if p + 1 < args.len() {
@@ -126,8 +140,9 @@ impl Settings {
 
 			self.parse_config_file();
 
-			let color_pos = args.iter()
-				.position(|a| a.as_str() == "--colorscheme_file");
+			let color_pos = args.iter().position(|a|
+				a.as_str() == "--colorscheme_file" || a.as_str() == "-f"
+			);
 
 			if let Some(pos) = color_pos {
 				if pos + 1 < args.len() {
@@ -144,122 +159,67 @@ impl Settings {
 
 		let mut it = args.iter().peekable();
 
+		macro_rules! set_matches{
+			// we have lots of overrides so that we can include however many
+			// arguments we want in the macro call
+			($arg:ident,$self:ident) => {
+				if let Some(val) = self.get_val_from_it(&mut it, $arg, tui_mode) {
+					self.$self = val;
+				}
+			};
+
+			($arg:ident,$self:ident,op) => {
+				if let Some(val) = self.get_val_from_it(&mut it, $arg, tui_mode) {
+					self.$self = Some(val);
+				}
+			};
+
+			($arg:ident,$self:ident,flag) => {
+				self.$self = self.get_bool_from_it(&mut it, $arg, tui_mode);
+			};
+
+			(
+				$arg:ident,
+				$(($long:expr, $short:expr, $self:ident $(, $op:ident)?)$(,)?)*
+			) => {
+				match $arg.replace("--", "").as_str() {
+					$($long | $short => set_matches!($arg, $self $(, $op)*),)*
+					x => Utilities::print_msg(
+						format!(
+							"Option \x1b[1m{}\x1b[0m not recognized. ignoring...", x
+						),
+						tui_mode
+					),
+				}
+			};
+		}
+
 		while let Some(arg) = it.next() {
-			if parse_config && !arg.is_empty()
-				&& arg.chars().next().unwrap_or(' ') != '-' {
-
-				println!("Option {} not recognized. Skipping...", arg);
-				continue;
-			}
-
-			match arg.replace("--", "").as_str() {
-				"host" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.host = s;
-					},
-				"fallback_host" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.fallback_host = s;
-					},
-				"server_port" =>
-					if let Some(u) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.server_port = u;
-					},
-				"socket_host" =>
-					if let Some(u) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.socket_host = Some(u);
-					},
-				"socket_port" =>
-					if let Some(u) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.socket_port = u;
-					},
-				"secure" =>
-					self.secure = self.get_bool_from_it(&mut it, arg, tui_mode),
-				"notifications" =>
-					self.notifications = self.get_bool_from_it(
-						&mut it, arg, tui_mode
-					),
-				"password" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.password = s;
-					},
-				"chat_indicator" =>
-					if let Some(c) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.current_chat_indicator = c;
-					},
-				"unread_indicator" =>
-					if let Some(c) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.unread_chat_indicator = c;
-					},
-				"my_chat_end" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.my_chat_end = s;
-					},
-				"their_chat_end" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.their_chat_end = s;
-					},
-				"chat_underline" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.chat_underline = s;
-					},
-				"chats_title" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.chats_title = s;
-					},
-				"messages_title" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.messages_title = s;
-					},
-				"input_title" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.input_title = s;
-					},
-				"help_title" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.help_title = s;
-					},
-				"to_title" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.to_title = s;
-					},
-				"compose_title" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.compose_title = s;
-					},
-				"colorscheme" =>
-					if let Some(s) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.colorscheme = s;
-					},
-				"poll_exit" =>
-					if let Some(u) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.poll_exit = u;
-					},
-				"timeout" =>
-					if let Some(u) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.timeout = u;
-					},
-				"use_fallback" =>
-					if self.get_bool_from_it(&mut it, arg, tui_mode) {
-						self.set_fallback_as_host();
-					},
-				"remote_addr" =>
-					if let Some(a) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.remote_addr = Some(a);
-					},
-				"remote_id" =>
-					if let Some(i) = self.get_val_from_it(&mut it, arg, tui_mode) {
-						self.remote_id = Some(i);
-					},
-				"help" => self.show_help =
-					self.get_bool_from_it(&mut it, arg, tui_mode) && !tui_mode,
-				x => Utilities::print_msg(
-					format!(
-						"Option \x1b[1m{}\x1b[0m not recognized. Ignoring...", x
-					),
-					tui_mode
-				),
-			}
+			set_matches!(arg,
+				("rest-host", "-u", rest_host),
+				("fallback-host", "-b", fallback_host),
+				("rest-port", "-p", rest_port),
+				("socket-host", "-o", socket_host, op),
+				("socket-port", "-w", socket_port),
+				("secure", "-s", secure, flag),
+				("notifications", "-n", notifications, flag),
+				("password", "-k", password),
+				("chat-indicator", "-x", current_chat_indicator),
+				("unread-indicator", "-z", unread_chat_indicator),
+				("chat-underline", "-d", chat_underline),
+				("chat-title", "-a", chats_title),
+				("messages-title", "-m", messages_title),
+				("input-title", "-y", input_title),
+				("help-title", "-e", help_title),
+				("to-title", "-q", to_title),
+				("compose-title", "-j", compose_title),
+				("theme", "-t", colorscheme),
+				("poll-input", "-l", poll_input),
+				("timeout", "-g", timeout),
+				("remote-url", "-r", remote_url, op),
+				("remote-id", "-i", remote_id, op),
+				("help", "-h", show_help, flag)
+			);
 		}
 	}
 
@@ -333,7 +293,7 @@ impl Settings {
 								for key in spec.keys() {
 									let mut rgb: Vec<u8> = Vec::new();
 
-									if !names.contains(&(*key).as_str()) {
+									if !names.contains(&key.as_str()) {
 										Utilities::print_msg(
 											format!("\x1b[18;1mError:\x1b[0m You have an incorrect specification in '{}': {}", color_spec, key),
 											false

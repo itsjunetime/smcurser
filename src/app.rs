@@ -57,7 +57,7 @@ impl MainApp {
 			address_view.custom_title = Some(set.to_title.to_owned());
 			compose_body_view.custom_title = Some(set.compose_title.to_owned());
 
-			if let Some(ref addr) = set.remote_addr {
+			if let Some(ref url) = set.remote_url {
 				if !set.secure {
 					eprintln!("\x1b[31;1mERROR:\x1b[0m \
 						If you use a remote connection, it must be secure");
@@ -75,20 +75,20 @@ impl MainApp {
 				};
 
 				let conn_url = format!("{}/connect?id={}&key={}&sock_type=client",
-					addr, id, set.password);
+					url, id, set.password);
 
 				config.with_sock_url(conn_url)
 					.with_rest(false);
 			} else {
 				let rest_url = format!("http{}://{}:{}/",
 					if set.secure { "s" } else { "" },
-					set.host,
-					set.server_port,
+					set.rest_host,
+					set.rest_port,
 				);
 
 				let sock_url = format!("ws{}://{}:{}/",
 					if set.secure { "s" } else { "" },
-					set.host,
+					set.rest_host,
 					set.socket_port
 				);
 
