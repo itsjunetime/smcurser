@@ -4,7 +4,6 @@ use crate::{
 	utilities::Utilities,
 	colorscheme::*,
 };
-use serde::Deserialize;
 use std::{
 	collections::HashMap,
 	fs::read_to_string,
@@ -15,7 +14,6 @@ use std::{
 };
 
 
-#[derive(Deserialize)]
 pub struct Settings {
 	pub host: String,
 	pub fallback_host: String,

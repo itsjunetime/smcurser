@@ -9,23 +9,17 @@ edition = "2018"
 [dependencies]
 lazy_static = "1.4.0"
 crossterm = "0.19.0"
-tui = { version = "0.14", default-features = false, features = ['crossterm', 'serde'] }
-serde = { version = "1.0.125", features = ["derive"] }
+tui = { version = "0.15", default-features = false, features = ['crossterm'] }
 serde_json = "1.0.64"
-reqwest = { version = "0.11.2", features = ["native-tls", "blocking", "gzip", "multipart"] }
-native-tls = "0.2.7"
 textwrap = "0.13.4"
 unicode-segmentation = "1.7.1"
 chrono = "0.4.19"
-tungstenite = { version = "0.13.0", features = ["native-tls"] }
-url = "2.2.1"
-open = "1.6.0"
 toml = "0.5.8"
-dirs = "3.0.1"
-notify-rust = { version = "4.3.0", features = ["image"] }
+dirs = "3.0.2"
+notify-rust = { version = "4.5.2", features = ["image"] }
 unicode-width = "0.1.8"
 sdk = { package = "smserver-rs-sdk", path = "./smserver-rs-sdk" }
 tokio = { version = "1.6.0", features = ["full"] }
 anyhow = "1.0.40"
-futures = "0.3.1"
+futures = "0.3.15"
 futures-locks = "0.6"

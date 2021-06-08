@@ -1,9 +1,8 @@
 use tui::style::Color;
-use serde::Deserialize;
 use std::collections::HashMap;
 use crate::SETTINGS;
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone)]
 pub struct Colorscheme {
 	pub name: String,
 	pub selected_box: Color,
