@@ -116,10 +116,6 @@ impl Settings {
 		}
 	}
 
-	/*pub fn set_fallback_as_host(&mut self) {
-		std::mem::swap(&mut self.fallback_host, &mut self.rest_host);
-	}*/
-
 	pub fn parse_args(
 		&mut self, mut args: Vec<String>, tui_mode: bool, parse_config: bool
 	) {
@@ -141,7 +137,7 @@ impl Settings {
 			self.parse_config_file();
 
 			let color_pos = args.iter().position(|a|
-				a.as_str() == "--colorscheme_file" || a.as_str() == "-f"
+				a.as_str() == "--theme-file" || a.as_str() == "-f"
 			);
 
 			if let Some(pos) = color_pos {
