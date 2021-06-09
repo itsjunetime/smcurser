@@ -74,8 +74,15 @@ impl MainApp {
 					}
 				};
 
-				let conn_url = format!("{}/connect?id={}&key={}&sock_type=client",
-					url, id, set.password);
+				let scheme = if url.starts_with("wss://") || url.starts_with("ws://")
+					|| url.starts_with("http://") || url.starts_with("https://") {
+					""
+				} else {
+					"wss://"
+				};
+
+				let conn_url = format!("{}{}/connect?id={}&key={}&sock_type=client",
+					scheme, url, id, set.password);
 
 				config.with_sock_url(conn_url)
 					.with_rest(false);
