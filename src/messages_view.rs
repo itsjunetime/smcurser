@@ -627,6 +627,14 @@ impl MessagesView {
 
 	pub fn open_attachment(&self, idx: usize) {
 		// Download the attachment to their downloads directory
+
+		if idx >= self.attachments.len() {
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = format!("cannot get attachment {} (there are only {})", idx, self.attachments.len());
+			}
+			return;
+		}
+
 		let mut down_dir = match dirs::download_dir() {
 			Some(dir) => dir,
 			None => {
