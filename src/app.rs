@@ -435,10 +435,7 @@ impl MainApp {
 								self.input_view.route_keycode(code);
 								if code == KeyCode::Backspace &&
 									self.input_view.input.is_empty() {
-
-									if let Ok(mut state) = STATE.write() {
-										state.set_idle_in_current();
-									}
+									self.send_typing_in_current(false).await;
 								}
 							},
 						};
@@ -470,7 +467,7 @@ impl MainApp {
 									Some(self.compose_body_view.input
 										.to_owned()),
 									None
-								);
+								).await;
 
 								self.selected_box = DisplayBox::Messages;
 
@@ -596,10 +593,7 @@ impl MainApp {
 					.to_lowercase();
 
 				if three_chars == ":s " {
-
-					if let Ok(mut state) = STATE.write() {
-						state.set_typing_in_current();
-					}
+					self.send_typing_in_current(true).await;
 				}
 			}
 		} else {
@@ -613,6 +607,26 @@ impl MainApp {
 				'k' | 'j' => self.scroll(ch == 'k', distance).await,
 				// will add more later maybe
 				_ => return,
+			}
+		}
+	}
+
+	async fn send_typing_in_current(&self, active: bool) {
+		let res = if let Ok(state) = STATE.read() {
+			if let Some(ref chat) = state.current_chat {
+				let mut api = self.client.write().await;
+				api.send_typing(&chat, active).await
+			} else {
+				Ok(())
+			}
+		} else {
+			Ok(())
+		};
+
+		if res.is_err() {
+			if let Ok(mut state) = STATE.write() {
+				state.hint_msg = "unable to snd typing notification to host; \
+					you may want to check your connection".to_owned();
 			}
 		}
 	}
@@ -650,7 +664,7 @@ impl MainApp {
 			// send a text
 			":s" => {
 				let cmd = splits.join(" ");
-				self.send_text(None, Some(cmd), None);
+				self.send_text(None, Some(cmd), None).await;
 			},
 			// reload the chats and redraw anything in case of
 			// graphical inconsistencies
@@ -679,7 +693,7 @@ impl MainApp {
 				state.hint_msg = "Please insert an index".to_string();
 			},
 			// send files
-			":f" => self.send_attachments(splits),
+			":f" => self.send_attachments(splits).await,
 			// send a tapback
 			":t" => {
 				let tapback = splits.join("");
@@ -977,7 +991,7 @@ impl MainApp {
 		}
 	}
 
-	fn send_text(
+	async fn send_text(
 		&self,
 		chat_id: Option<String>,
 		text: Option<String>,
@@ -995,9 +1009,7 @@ impl MainApp {
 		};
 
 		// tell the websocket that I'm not typing anymore
-		if let Ok(mut state) = STATE.write() {
-			state.set_idle_in_current();
-		}
+		self.send_typing_in_current(false).await;
 
 		// only send it if you have a chat
 		if let Some(id) = chat_option {
@@ -1024,13 +1036,13 @@ impl MainApp {
 		}
 	}
 
-	fn send_attachments(&self, files: Vec<&str>) {
+	async fn send_attachments(&self, files: Vec<&str>) {
 		let orig = files.join(" ");
 
 		// this retuns a vector of strings, each string specifying the path of a file to be sent
 		let files_to_send = self.input_view.get_typed_attachments(orig);
 
-		self.send_text(None, None, Some(files_to_send));
+		self.send_text(None, None, Some(files_to_send)).await;
 	}
 
 	fn bind_var(&mut self, ops: Vec<String>) {

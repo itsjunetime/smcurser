@@ -20,18 +20,6 @@ impl GlobalState {
 			websocket_state: WebSocketState::Disconnected,
 		}
 	}
-
-	pub fn set_typing_in_current(&mut self) {
-		if let Some(ref chat) = self.current_chat {
-			self.outgoing_websocket_msg = Some(format!("typing:{}", chat));
-		}
-	}
-
-	pub fn set_idle_in_current(&mut self) {
-		if let Some(ref chat) = self.current_chat {
-			self.outgoing_websocket_msg = Some(format!("idle:{}", chat));
-		}
-	}
 }
 
 #[derive(Debug, Clone, PartialEq)]

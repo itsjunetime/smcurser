@@ -8,14 +8,13 @@ SMCurser running on my desktop
 ## Features
 - Browse and send texts and files from iMessage, all from your terminal
 - Send tapbacks, delete conversations and texts, compose new conversations, and more
-- SMCurser displays typing indicators from other parties in real time
+- SMCurser displays typing indicators from (and sends typing indicators to) other parties in real time
 - Ability to create and use custom colorschemes
 - Extremely fast and low memory usage
 - Optional configuration file for persistent customization
 - Many more goodies to significantly increase quality and ease of use
 
 ## Planned future features
-- Sending typing indicators when you start typing
 - Ability to specify websocket/API subdirectory to connect to if running SMServer over a proxy
 - Have something else you'd like added? File an issue or PR and I'll take a look at it :)
 
