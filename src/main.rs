@@ -47,8 +47,7 @@ async fn main() -> anyhow::Result<()> {
 	// if they have specified no host, then exit
 	// (since you need a host to communicate with)
 	if let Ok(set) = SETTINGS.read() {
-		if (set.rest_host.is_empty() || set.socket_host.is_none())
-			&& set.remote_url.is_none() {
+		if set.rest_host.is_empty() && set.remote_url.is_none() {
 			eprintln!(
 				"\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to"
 			);

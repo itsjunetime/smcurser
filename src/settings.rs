@@ -57,7 +57,7 @@ pub struct Settings {
 	pub rest_host: String,
 	pub fallback_host: String,
 	pub rest_port: u16,
-	pub socket_host: Option<String>,
+	pub socket_host: String,
 	pub socket_port: u16,
 	pub remote_url: Option<String>,
 	pub remote_id: Option<String>,
@@ -89,7 +89,7 @@ impl Settings {
 			rest_host: "".to_owned(),
 			fallback_host: "".to_owned(),
 			rest_port: 8741,
-			socket_host: None,
+			socket_host: "".to_owned(),
 			socket_port: 8740,
 			remote_url: None,
 			remote_id: None,
@@ -182,7 +182,7 @@ impl Settings {
 					$($long | $short => set_matches!($arg, $self $(, $op)*),)*
 					x => Utilities::print_msg(
 						format!(
-							"Option \x1b[1m{}\x1b[0m not recognized. ignoring...", x
+							"Option {} not recognized. ignoring...", x
 						),
 						tui_mode
 					),
@@ -195,7 +195,7 @@ impl Settings {
 				("rest-host", "-u", rest_host),
 				("fallback-host", "-b", fallback_host),
 				("rest-port", "-p", rest_port),
-				("socket-host", "-o", socket_host, op),
+				("socket-host", "-o", socket_host),
 				("socket-port", "-w", socket_port),
 				("secure", "-s", secure, flag),
 				("notifications", "-n", notifications, flag),
@@ -216,6 +216,10 @@ impl Settings {
 				("remote-id", "-i", remote_id, op),
 				("help", "-h", show_help, flag)
 			);
+		}
+
+		if self.socket_host.is_empty() {
+			self.socket_host = self.rest_host.to_owned();
 		}
 	}
 
