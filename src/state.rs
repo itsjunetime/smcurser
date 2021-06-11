@@ -7,6 +7,7 @@ pub struct GlobalState {
 	pub awaiting_new_convo: bool,
 	pub outgoing_websocket_msg: Option<String>,
 	pub websocket_state: WebSocketState,
+	pub battery_status: BatteryStatus,
 }
 
 impl GlobalState {
@@ -18,6 +19,16 @@ impl GlobalState {
 			awaiting_new_convo: false,
 			outgoing_websocket_msg: None,
 			websocket_state: WebSocketState::Disconnected,
+			battery_status: BatteryStatus::Dead
+		}
+	}
+
+	pub fn battery_string(&self) -> String {
+		match self.battery_status {
+			BatteryStatus::Full => "100%, full".to_owned(),
+			BatteryStatus::Charging(x) => format!("{}%, charging", x),
+			BatteryStatus::Unplugged(x) => format!("{}%, unplugged", x),
+			BatteryStatus::Dead => "0%, dead".to_owned()
 		}
 	}
 }
@@ -27,4 +38,11 @@ pub enum WebSocketState {
 	Connected,
 	//Connecting,
 	Disconnected,
+}
+
+pub enum BatteryStatus {
+	Full,
+	Charging(u8),
+	Unplugged(u8),
+	Dead
 }

@@ -146,7 +146,7 @@ impl MainApp {
 				match msg.command {
 					APICommand::Typing => {
 						let typ = msg.typing_data()
-							.expect("Cannot turn SocketResponse
+							.expect("Cannot turn SocketResponse \
 								into TypingNotification");
 
 						let new_text = match typ.active {
@@ -165,6 +165,29 @@ impl MainApp {
 
 						if let Ok(mut state) = STATE.write() {
 							state.new_text = Some(text.message);
+						}
+					},
+					APICommand::BatteryStatus => {
+						crate::utilities::Utilities::log(&format!("got battery status: {:?}", msg));
+
+						let data = msg.battery_status_data()
+							.expect("Cannot turn SocketResponse \
+								into TypingNotification");
+
+						let status = if data.charging {
+							match data.percentage.round() as u8 {
+								x if x >= 100 => {
+									BatteryStatus::Full
+								},
+								0 => BatteryStatus::Dead,
+								x => BatteryStatus::Charging(x)
+							}
+						} else {
+							BatteryStatus::Unplugged(data.percentage.round() as u8)
+						};
+
+						if let Ok(mut state) = STATE.write() {
+							state.battery_status = status;
 						}
 					},
 					_ => (),
@@ -255,6 +278,14 @@ impl MainApp {
 					f.render_widget(help_msg_widget, size);
 				},
 				_ => {
+					// we have to get this string first so that we know how long it is
+					// to make it left aligned
+					let battery_msg = if let Ok(state) = STATE.read() {
+						state.battery_string()
+					} else {
+						"0%, dead".to_owned()
+					};
+
 					// set up layouts
 					let main_layout = Layout::default()
 						.direction(Direction::Vertical)
@@ -274,6 +305,15 @@ impl MainApp {
 								Constraint::Percentage(70),
 							].as_ref()
 						).split(main_layout[0]);
+
+					let bottom_layout = Layout::default()
+						.direction(Direction::Horizontal)
+						.constraints(
+							[
+								Constraint::Min(1),
+								Constraint::Length(battery_msg.len() as u16 + 1),
+							].as_ref()
+						).split(main_layout[2]);
 
 					let chats_selected = self.selected_box == DisplayBox::Chats;
 					let input_cursor = self.selected_box !=
@@ -342,19 +382,32 @@ impl MainApp {
 					};
 
 					let help_span = vec![
-						Spans::from(
-							vec![
-								Span::styled(
-									hint_msg,
-									Style::default()
-										.fg(colorscheme.hints_box)
-								)
-							]
-						)
+						Spans::from(vec![
+							Span::styled(
+								hint_msg,
+								Style::default()
+									.fg(colorscheme.hints_box)
+							)
+						])
 					];
 
 					let help_widget = Paragraph::new(help_span);
-					f.render_widget(help_widget, main_layout[2]);
+					f.render_widget(help_widget, bottom_layout[0]);
+
+					// and show the battery percentage and status in the
+					// bottom right corner
+					let batt_span = vec![
+						Spans::from(vec![
+							Span::styled(
+								battery_msg,
+								Style::default()
+									.fg(colorscheme.text_color)
+							)
+						])
+					];
+
+					let batt_widget = Paragraph::new(batt_span);
+					f.render_widget(batt_widget, bottom_layout[1]);
 				}
 			}
 		})?;
