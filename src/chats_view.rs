@@ -82,6 +82,13 @@ impl ChatsView {
 					let (num, rest) = c.split_at(4);
 					let symbol = rest.chars().next().unwrap_or(' ');
 
+					let rest_style = if symbol == set.current_chat_indicator {
+						Style::default().fg(colorscheme.text_color)
+							.add_modifier(tui::style::Modifier::BOLD)
+					} else {
+						Style::default().fg(colorscheme.text_color)
+					};
+
 					// conditionally color the symbol and create its span
 					let spans = vec![
 						Span::styled(
@@ -105,7 +112,7 @@ impl ChatsView {
 						},
 						Span::styled(
 							rest.replacen(symbol, "", 1),
-							Style::default().fg(colorscheme.text_color)
+							rest_style
 						),
 					];
 

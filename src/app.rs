@@ -9,7 +9,6 @@ use crate::{
 	state::*,
 };
 use std::{
-	vec::Vec,
 	io::{Stdout, Error},
 	mem::swap,
 	cmp::{min, max},
