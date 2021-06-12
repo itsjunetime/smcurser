@@ -711,6 +711,11 @@ impl MessagesView {
 	}
 
 	pub fn copy_current_to_clipboard(&self) {
+		if self.selected_msg as usize >= self.messages.len() {
+			hint!("no messages selected to copy");
+			return;
+		}
+
 		let content = &self.messages[self.selected_msg as usize].text;
 		let mut ctx: ClipboardContext = match ClipboardProvider::new() {
 			Ok(ctx) => ctx,

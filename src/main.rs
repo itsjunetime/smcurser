@@ -76,7 +76,7 @@ fn parse_args(args: Vec<String>) {
 	set.parse_args(args, false, true);
 }
 
-const HELP_MSG: [&str; 31] = [
+const HELP_MSG: [&str; 33] = [
 	"COMMANDS:",
 	":h, :H -",
 	"displays this help message",
@@ -108,6 +108,8 @@ const HELP_MSG: [&str; 31] = [
 	"this deletes the current conversation (if you follow it with the chat_id, e.g. `:dc +11231231234`). If you don't, it will prompt you to do so.",
 	":dt - ",
 	"this deletes the currently selected text. There is no prompting, it immediately deletes it, so make sure that you are careful with this comand",
+	":y, :Y - ",
+	"this copies the text from the currently selected text onto into your clipboard",
 ];
 
 const CMD_HELP: [&str; 52] = [
