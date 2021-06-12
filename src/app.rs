@@ -168,17 +168,13 @@ impl MainApp {
 						}
 					},
 					APICommand::BatteryStatus => {
-						crate::utilities::Utilities::log(&format!("got battery status: {:?}", msg));
-
 						let data = msg.battery_status_data()
 							.expect("Cannot turn SocketResponse \
 								into TypingNotification");
 
 						let status = if data.charging {
 							match data.percentage.round() as u8 {
-								x if x >= 100 => {
-									BatteryStatus::Full
-								},
+								100 => BatteryStatus::Full,
 								0 => BatteryStatus::Dead,
 								x => BatteryStatus::Charging(x)
 							}
@@ -683,10 +679,8 @@ impl MainApp {
 		};
 
 		if res.is_err() {
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "unable to snd typing notification to host; \
-					you may want to check your connection".to_owned();
-			}
+			hint!("unable to send typing notifications to host; \
+				you may want to check your connection");
 		}
 	}
 
@@ -710,13 +704,10 @@ impl MainApp {
 				let index = splits[0].parse::<usize>();
 				match index {
 					Ok(idx) => self.load_in_conversation(idx).await,
-					Err(_) => if let Ok(mut state) = STATE.write() {
-						state.hint_msg =
-							format!("Cannot convert {} to an int", splits[0]);
-					},
+					Err(_) => hint!("Cannot convert '{}' to an int", splits[0]),
 				}
-			} else if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "Please insert an index".to_string();
+			} else {
+				hint!("Please insert an index");
 			},
 			// show help
 			":h" => self.selected_box = DisplayBox::Help,
@@ -743,13 +734,10 @@ impl MainApp {
 				let index = splits[0].parse::<usize>();
 				match index {
 					Ok(idx) => self.msgs_view.open_attachment(idx),
-					Err(_) => if let Ok(mut state) = STATE.write() {
-						state.hint_msg =
-							format!("Cannot convert {} to an int", splits[0]);
-					}
+					Err(_) => hint!("Cannot convert {} to an int", splits[0]),
 				}
-			} else if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "Please insert an index".to_string();
+			} else {
+				hint!("Please inset an index");
 			},
 			// send files
 			":f" => self.send_attachments(splits).await,
@@ -785,13 +773,8 @@ impl MainApp {
 						let reload = self.chats_view.reload_chats();
 
 						if let Err(err) = load.await {
-							if let Ok(mut state) = STATE.write() {
-								state.hint_msg = format!(
-									"Unable to load in messages for {}: {}",
-									chat,
-									err
-								);
-							}
+							hint!("Unable to load in messages for {}: {}",
+								chat, err);
 						}
 						reload.await;
 					}
@@ -806,20 +789,11 @@ impl MainApp {
 
 				let success = match api.delete_chat(&chat).await {
 					Err(err) => {
-						if let Ok(mut state) = STATE.write() {
-							state.hint_msg =
-								format!(
-									"Failed to delete conversation: {}",
-									err
-								);
-						}
+						hint!("Failed to delete conversation : {}", err);
 						false
 					},
 					Ok(_) => {
-						if let Ok(mut state) = STATE.write() {
-							state.hint_msg =
-								"deleted conversation :)".to_owned();
-						}
+						hint!("deleted conversation :)");
 
 						// reload chats so that it doesn't show up anymore
 						//self.chats_view.reload_chats().await;
@@ -837,10 +811,9 @@ impl MainApp {
 							.chat_identifier;
 
 						if sel_chat.as_str() == chat {
-							if let Err(err) = self.msgs_view.load_in_conversation("").await {
-								if let Ok(mut state) = STATE.write() {
-									state.hint_msg = format!("Unable to reload messages: {}", err);
-								}
+							if let Err(err) =
+								self.msgs_view.load_in_conversation("").await {
+								hint!("Unable to reload messages: {}", err);
 							}
 						}
 					}
@@ -852,19 +825,15 @@ impl MainApp {
 				// let them know how to delete this conversation
 				let chat = &self.chats_view.chats[ls].chat_identifier;
 
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg =
-						format!("Please enter ':dc {}'
-							if you'd like to delete this conversation",
-							chat
-						);
-				}
+				hint!("Please enter ':dc {}' if you'd like \
+					to delete this conversation", chat);
 			},
+			// copy the text of the currently selected message
+			// to the system clipboard
+			":y" => self.msgs_view.copy_current_to_clipboard(),
 			// default
 			x => {
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg = format!("Command {} not recognized", x);
-				}
+				hint!("Command {} not recognized", x);
 			}
 		};
 
@@ -900,11 +869,9 @@ impl MainApp {
 					);
 				}
 			},
-			_ => if let Ok(mut state) = STATE.write() {
+			_ => {
 				// this shouldn't ever be called
-				state.hint_msg =
-					"Sorry, I haven't implemented scrolling for this box yet :/"
-						.to_string();
+				hint!("sorry, I haven't implemented scrolling for this box yet :/");
 			},
 		}
 	}
@@ -929,8 +896,8 @@ impl MainApp {
 					Err(err) => format!("failed to load in chat: {}", err),
 				}
 			}
-		} else if let Ok(mut state) = STATE.write() {
-			state.hint_msg = format!("{} is out of range for the chats", idx);
+		} else {
+			hint!("{} is out of range for the chats", idx);
 		}
 	}
 
@@ -1081,24 +1048,21 @@ impl MainApp {
 					id, text, None, files, None
 				).await;
 
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg = match res {
-						Ok(_) => "text sent :)".to_owned(),
-						Err(err) => format!("text not sent: {}", err),
-					}
+				match res {
+					Ok(_) => hint!("text sent :)"),
+					Err(err) => hint!("text not sent: {}", err),
 				}
 			});
 
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "Sending text...".to_owned();
-			}
+			hint!("sending text...");
 		}
 	}
 
 	async fn send_attachments(&self, files: Vec<&str>) {
 		let orig = files.join(" ");
 
-		// this retuns a vector of strings, each string specifying the path of a file to be sent
+		// this retuns a vector of strings, each string specifying the path
+		// of a file to be sent
 		let files_to_send = self.input_view.get_typed_attachments(orig);
 
 		self.send_text(None, None, Some(files_to_send)).await;
@@ -1107,11 +1071,10 @@ impl MainApp {
 	fn bind_var(&mut self, ops: Vec<String>) {
 		// set a variable in settings
 
-		// you have to have the name of the variable to change, and the value to change it to
+		// you have to have the name of the variable to change,
+		// and the value to change it to
 		if ops.len() < 2 {
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = "Please enter at least a variable name and value".to_string();
-			}
+			hint!("Please enter at least a variable name and value");
 			return;
 		}
 
@@ -1140,18 +1103,12 @@ impl MainApp {
 				let mut api = self.client.write().await;
 
 				match api.send_tapback(&guid, idx as u16, None).await {
-					Err(err) => if let Ok(mut state) = STATE.write() {
-						state.hint_msg =
-							format!("Could not send tapback: {}", err);
-					},
-					Ok(_) => if let Ok(mut state) = STATE.write() {
-						state.hint_msg = "Sent tapback :)".to_owned();
-					}
+					Err(err) => hint!("could not send tapback: {}", err),
+					Ok(_) => hint!("sent tapback :)"),
 				}
 			}
-		} else if let Ok(mut state) = STATE.write() {
-			state.hint_msg = format!(
-				"Did not recognize tapback option {}; possible options are: {}",
+		} else {
+			hint!("Did not recognize tapback option {}; possible options are: {}",
 				tap,
 				msgs.join(", ")
 			);

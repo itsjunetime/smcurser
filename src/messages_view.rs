@@ -20,6 +20,7 @@ use std::{
 	io::Stdout,
 };
 use futures_locks::RwLock;
+use clipboard::{ClipboardProvider, ClipboardContext};
 
 pub struct MessagesView {
 	pub selected_msg: u16,
@@ -394,8 +395,7 @@ impl MessagesView {
 				).await {
 					Ok(msgs) => Some(msgs),
 					Err(err) => {
-						state.hint_msg =
-							format!("Failed to get messages: {}", err);
+						state.hint_msg = format!("Failed to get messages: {}", err);
 						None
 					}
 				}
@@ -413,15 +413,11 @@ impl MessagesView {
 				self.selected_msg = old_len as u16;
 				self.last_height = 0;
 
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg = "loaded in more messages".to_owned();
-				}
-			} else if let Ok(mut state) = STATE.write() {
+				hint!("loaded in more messages");
+			} else {
 				// if the length is 0, then they've already loaded in
 				// all the texts
-				state.hint_msg =
-					"you have loaded in all the messages for this conversation"
-						.to_owned();
+				hint!("you have loaded in all the messages for this conversation");
 			}
 		}
 	}
@@ -629,9 +625,8 @@ impl MessagesView {
 		// Download the attachment to their downloads directory
 
 		if idx >= self.attachments.len() {
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg = format!("cannot get attachment {} (there are only {})", idx, self.attachments.len());
-			}
+			hint!("cannot get attachment {} (there are only {})",
+				idx, self.attachments.len());
 			return;
 		}
 
@@ -652,31 +647,18 @@ impl MessagesView {
 				down_dir.push(name);
 				match down_dir.as_os_str().to_str() {
 					Some(file_loc) => {
-						if let Ok(mut state) = STATE.write() {
-							state.hint_msg = format!(
-								"Downloading file to {}",
-								file_loc
-							);
-						}
-
+						hint!("Downloading file to {}", file_loc);
 						Some(file_loc.to_owned())
 					}
 					None => {
-						if let Ok(mut state) = STATE.write() {
-							state.hint_msg =
-								"Cannot download file. Please ensure
-								the filename is valid unicode".to_owned();
-						}
+						hint!("Cannot download file. Please ensure the filename \
+							({}) is valid unicode", name);
 						None
 					}
 				}
 			}
 			None => {
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg =
-						"Cannot get the name of the attachment to download :("
-							.to_owned();
-				}
+				hint!("cannot get the name of the attachment to download :(");
 				None
 			}
 		};
@@ -690,26 +672,12 @@ impl MessagesView {
 				match api.get_attachment(&att_name).await {
 					Ok(data) => {
 						match std::fs::write(&loc, data) {
-							Ok(_) => if let Ok(mut state) = STATE.write() {
-								state.hint_msg = format!(
-									"Downloaded file to {} :)",
-									loc
-								);
-							},
-							Err(err) => if let Ok(mut state) = STATE.write() {
-								state.hint_msg = format!(
-									"Could not write to file at {}: {}",
-									loc, err
-								);
-							}
+							Ok(_) => hint!("downloaded file to {} :)", loc),
+							Err(err) => hint!("Could not write to file at {}: {}",
+								loc, err),
 						}
 					},
-					Err(err) => if let Ok(mut state) = STATE.write() {
-						state.hint_msg = format!(
-							"Could not download file: {}",
-							err
-						);
-					}
+					Err(err) => hint!("could not download file: {}", err),
 				}
 			});
 		}
@@ -721,10 +689,7 @@ impl MessagesView {
 		// first, check the index to make sure that it's in range
 		// (I don't know how it wouldn't be but we gotta take precautions)
 		if self.messages.len() as u16 <= self.selected_msg {
-			if let Ok(mut state) = STATE.write() {
-				state.hint_msg =
-					"failed to delete text (not enough messages)".to_owned();
-			}
+			hint!("Failed to delete message (not enough messages");
 			return false;
 		}
 
@@ -735,17 +700,29 @@ impl MessagesView {
 
 		match api.delete_text(identifier).await {
 			Err(err) => {
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg = format!("failed to delete text: {}", err);
-				}
+				hint!("failed to delete text: {}", err);
 				false
 			},
 			Ok(_) => {
-				if let Ok(mut state) = STATE.write() {
-					state.hint_msg = "deleted text :)".to_owned();
-				}
+				hint!("deleted text :)");
 				true
 			}
+		}
+	}
+
+	pub fn copy_current_to_clipboard(&self) {
+		let content = &self.messages[self.selected_msg as usize].text;
+		let mut ctx: ClipboardContext = match ClipboardProvider::new() {
+			Ok(ctx) => ctx,
+			Err(err) => {
+				hint!("could not copy to clipboard: {}", err);
+				return;
+			}
+		};
+
+		match ctx.set_contents(content.to_owned()) {
+			Err(err) => hint!("could not copy to clipboard: {}", err),
+			Ok(_) => hint!("copied text to clipboard :)"),
 		}
 	}
 }

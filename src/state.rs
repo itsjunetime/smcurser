@@ -1,5 +1,14 @@
 use sdk::models::*;
 
+#[macro_export]
+macro_rules! hint{
+	($msg:expr$(, $args:expr)*) => {
+		if let Ok(mut state) = STATE.write() {
+			state.hint_msg = format!($msg $(, $args)*);
+		}
+	}
+}
+
 pub struct GlobalState {
 	pub new_text: Option<Message>,
 	pub current_chat: Option<String>,

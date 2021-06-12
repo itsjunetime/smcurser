@@ -223,10 +223,7 @@ impl ChatsView {
 				).await {
 					Ok(chs) => chs,
 					Err(err) => {
-						if let Ok(mut state) = STATE.write() {
-							state.hint_msg =
-								format!("couldn't get chats: {}", err)
-						}
+						hint!("couldn't get chats: {}", err);
 						Vec::new()
 					},
 				};
@@ -311,10 +308,7 @@ impl ChatsView {
 				let name = match api.get_name(id).await {
 					Ok(name) => name,
 					Err(err) => {
-						if let Ok(mut state) = STATE.write() {
-							state.hint_msg =
-								format!("Couldn't get name: {}", err);
-						}
+						hint!("Couldn't get name: {}", err);
 						id.to_owned()
 					}
 				};
@@ -352,9 +346,7 @@ impl ChatsView {
 
 		match api.get_chats(None, None).await {
 			Ok(chs) => self.chats = chs,
-			Err(err) => if let Ok(mut state) = STATE.write() {
-				state.hint_msg = format!("couldn't get chats: {}", err);
-			}
+			Err(err) => hint!("couldn't get chats: {}", err),
 		}
 
 		self.last_height = 0;
