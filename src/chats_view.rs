@@ -321,7 +321,9 @@ impl ChatsView {
 					latest_text: item.text.to_owned(),
 					has_unread: true,
 					addresses: id.to_owned(),
-					is_selected: false
+					is_selected: false,
+					pinned: false,
+					relative_time: "".to_owned(),
 				};
 
 				// Must increase the currently selected index if one is selected,

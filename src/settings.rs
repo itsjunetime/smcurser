@@ -407,5 +407,4 @@ impl Settings {
 
 		b
 	}
-
 }
