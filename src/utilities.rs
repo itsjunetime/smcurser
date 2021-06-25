@@ -21,7 +21,8 @@ impl Utilities {
 	}
 
 	pub fn show_notification(title: &str, msg: &str) {
-		let mut image_dir = dirs::config_dir().expect("Could not get configuration dir. Please report this to  the maintainer.");
+		let mut image_dir = dirs::config_dir()
+			.expect("Could not get configuration directory");
 		image_dir.push("smcurser");
 		image_dir.push("icon.png");
 
@@ -41,7 +42,7 @@ impl Utilities {
 	}
 
 	#[allow(dead_code)]
-	pub fn log(log_str: &str) {
+	pub fn log(log_str: String) {
 		let mut file = OpenOptions::new()
 			.create(true)
 			.append(true)

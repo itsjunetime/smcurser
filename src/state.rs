@@ -9,8 +9,17 @@ macro_rules! hint{
 	}
 }
 
+#[macro_export]
+macro_rules! log{
+	($msg:expr$(, $args:expr)*) => {
+		crate::utilities::Utilities::log(format!($msg$(, $args)*));
+	}
+}
+
 pub struct GlobalState {
 	pub new_text: Option<Message>,
+	pub new_chats: Option<anyhow::Result<Vec<Conversation>>>,
+	pub new_msgs: Option<anyhow::Result<Vec<Message>>>,
 	pub current_chat: Option<String>,
 	pub hint_msg: String,
 	pub awaiting_new_convo: bool,
@@ -23,6 +32,8 @@ impl GlobalState {
 	pub fn new() -> GlobalState {
 		GlobalState {
 			new_text: None,
+			new_chats: None,
+			new_msgs: None,
 			current_chat: None,
 			hint_msg: "type :h to get help :)".to_string(),
 			awaiting_new_convo: false,

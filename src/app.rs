@@ -198,18 +198,18 @@ impl MainApp {
 
 		// authenticate with the host right off the bat,
 		// just so things don't time out later
-		{
-			let mut api = self.client.write().await;
+		let mut api = self.client.write().await;
 
-			if api.uses_rest {
-				match api.authenticate().await {
-					Err(err) => return Err(err),
-					Ok(auth) => if !auth {
-						return Err(sdk::error::SDKError::UnAuthenticated.into());
-					}
+		if api.uses_rest {
+			match api.authenticate().await {
+				Err(err) => return Err(err),
+				Ok(auth) => if !auth {
+					return Err(sdk::error::SDKError::UnAuthenticated.into());
 				}
 			}
 		}
+
+		drop(api);
 
 		// necessary to not print every character the user inputs
 		if let Err(err) = crossterm::terminal::enable_raw_mode() {
@@ -443,6 +443,57 @@ impl MainApp {
 					if let Some(txt) = none_text {
 						self.load_in_text(txt).await;
 					}
+					break;
+				}
+
+				let has_chats = if let Ok(state) = STATE.read() {
+					state.new_chats.is_some()
+				} else { false };
+
+				if has_chats {
+					let chats = if let Ok(mut state) = STATE.write() {
+						//let mut none_chats: Option<anyhow::Result<Vec<Conversation>>> = None;
+						let mut none_chats = None;
+						swap(&mut none_chats, &mut state.new_chats);
+						none_chats
+					} else { None };
+
+					if let Some(res) = chats {
+						match res {
+							Ok(chs) => self.loaded_in_chats(chs).await,
+							Err(err) => hint!("failed to load in chats: {}", err),
+						}
+					}
+
+					self.chats_view.await_state = AwaitState::Not;
+
+					break;
+				}
+
+				let has_msgs = if let Ok(state) = STATE.read() {
+					state.new_msgs.is_some()
+				} else { false };
+
+				if has_msgs {
+					let msgs = if let Ok(mut state) = STATE.write() {
+						let mut none_msgs = None;
+						swap(&mut none_msgs, &mut state.new_msgs);
+						none_msgs
+					} else { None };
+
+					if let Some(res) = msgs {
+						match res {
+							Ok(ms) => if ms.is_empty() {
+								hint!("you have loaded in all the messages for this conversation");
+							} else {
+								self.loaded_in_messages(ms).await;
+							},
+							Err(err) => hint!("failed to load in messages: {}", err),
+						}
+					}
+
+					self.msgs_view.await_state = AwaitState::Not;
+
 					break;
 				}
 
@@ -772,11 +823,7 @@ impl MainApp {
 						let load = self.msgs_view.load_in_conversation(&chat);
 						let reload = self.chats_view.reload_chats();
 
-						if let Err(err) = load.await {
-							hint!("Unable to load in messages for {}: {}",
-								chat, err);
-						}
-						reload.await;
+						tokio::join!(load, reload);
 					}
 				}
 			},
@@ -811,10 +858,7 @@ impl MainApp {
 							.chat_identifier;
 
 						if sel_chat.as_str() == chat {
-							if let Err(err) =
-								self.msgs_view.load_in_conversation("").await {
-								hint!("Unable to reload messages: {}", err);
-							}
+							self.msgs_view.load_in_conversation("").await;
 						}
 					}
 
@@ -884,18 +928,17 @@ impl MainApp {
 			let id = self.chats_view.chats[idx].chat_identifier.to_owned();
 
 			// then you can send it to the messages view
-			let loaded = self.msgs_view.load_in_conversation(&id).await;
+			let loaded = self.msgs_view.load_in_conversation(&id);
 
 			if let Ok(mut state) = STATE.write() {
 				state.current_chat = Some(id.to_owned());
-				state.hint_msg = match loaded {
-					Ok(_) => {
-						self.selected_chat = Some(idx);
-						"loaded in chat :)".to_string()
-					}
-					Err(err) => format!("failed to load in chat: {}", err),
-				}
 			}
+
+			self.selected_chat = Some(idx);
+
+			loaded.await;
+
+			hint!("loading in messages...");
 		} else {
 			hint!("{} is out of range for the chats", idx);
 		}
@@ -1017,6 +1060,39 @@ impl MainApp {
 		}
 	}
 
+	async fn loaded_in_chats(&mut self, chats: Vec<Conversation>) {
+		match self.chats_view.await_state {
+			AwaitState::More => {
+				let mut mut_chats = chats;
+				self.chats_view.chats.append(&mut mut_chats);
+			},
+			AwaitState::Replace => self.chats_view.chats = chats,
+			_ => return
+		}
+
+		self.chats_view.last_height = 0;
+
+		hint!("loaded in chats :)");
+	}
+
+	async fn loaded_in_messages(&mut self, msgs: Vec<Message>) {
+		match self.msgs_view.await_state {
+			AwaitState::More => {
+				let mut mut_msgs = msgs;
+				self.msgs_view.messages.append(&mut mut_msgs);
+			},
+			AwaitState::Replace => {
+				self.msgs_view.messages = msgs;
+				self.msgs_view.selected_msg = self.msgs_view.messages.len() as u16 - 1;
+			},
+			_ => return
+		}
+
+		self.msgs_view.last_height = 0;
+
+		hint!("loaded in messages :)");
+	}
+
 	async fn send_text(
 		&self,
 		chat_id: Option<String>,
@@ -1123,4 +1199,11 @@ enum DisplayBox {
 	Help,
 	ComposeAddress,
 	ComposeBody,
+}
+
+#[derive(PartialEq, Debug)]
+pub enum AwaitState {
+	More,
+	Replace,
+	Not
 }

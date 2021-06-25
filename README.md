@@ -27,6 +27,7 @@ Once you've got that completely installed, do the following:
 ```sh
 git clone https://github.com/iandwelker/smcurser.git
 cd smcurser
+git submodule update --init --recursive
 cargo build --release
 ```
 

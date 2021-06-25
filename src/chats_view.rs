@@ -1,4 +1,7 @@
-use crate::*;
+use crate::{
+	*,
+	app::AwaitState
+};
 use sdk::{
 	models::*,
 	*,
@@ -26,23 +29,32 @@ pub struct ChatsView {
 	pub last_height: u16,
 	pub last_selected: Option<usize>,
 	pub client: Arc<RwLock<APIClient>>,
+	pub await_state: AwaitState
 }
 
 impl ChatsView {
 	pub async fn new(
 		client: Arc<RwLock<APIClient>>
 	) -> anyhow::Result<ChatsView> {
-		let mut api = client.write().await;
+		let api_clone = client.clone();
 
-		let chats = match api.get_chats(None, None).await {
-			Ok(chs) => chs,
-			Err(err) => {
-				eprintln!("Failed to get chats: {}", err);
-				return Err(err);
+		tokio::spawn(async move {
+			let mut api = api_clone.write().await;
+
+			let chats = api.get_chats(None, None).await;
+
+			if let Err(ref err) = chats {
+				hint!("Failed to get chats: {}", err);
+			};
+
+			drop(api);
+
+			if let Ok(mut state) = STATE.write() {
+				state.new_chats = Some(chats);
 			}
-		};
+		});
 
-		drop(api);
+		hint!("loading in initial chats...");
 
 		Ok(ChatsView {
 			scroll: 0,
@@ -50,8 +62,9 @@ impl ChatsView {
 			last_width: 0,
 			last_height: 0,
 			last_selected: None,
+			await_state: AwaitState::Replace,
+			chats: Vec::new(),
 			client,
-			chats,
 		})
 	}
 
@@ -213,25 +226,28 @@ impl ChatsView {
 			self.scroll = min(self.scroll + distance, max);
 
 			// load in new texts automatically if you hit the limit
-			if self.scroll == max {
+			if self.scroll == max && self.await_state == AwaitState::Not {
+				let api_clone = self.client.clone();
+				let chats_len = self.chats.len() as u32;
+				self.await_state = AwaitState::More;
 
-				let mut api = self.client.write().await;
+				tokio::spawn(async move {
+					let mut api = api_clone.write().await;
 
-				let mut new_chats = match api.get_chats(
-					None,
-					Some(self.chats.len() as u32)
-				).await {
-					Ok(chs) => chs,
-					Err(err) => {
-						hint!("couldn't get chats: {}", err);
-						Vec::new()
-					},
-				};
+					let new_chats = api.get_chats(None, Some(chats_len)).await;
 
-				drop(api);
+					if let Err(ref err) = new_chats {
+						hint!("couldn't get chats: {:?}", err);
+					}
 
-				self.chats.append(&mut new_chats);
-				self.last_height = 0;
+					drop(api);
+
+					if let Ok(mut state) = STATE.write() {
+						state.new_chats = Some(new_chats);
+					}
+				});
+
+				hint!("loading more conversations...");
 			}
 		} else {
 			// only scroll to upper limit
@@ -344,13 +360,25 @@ impl ChatsView {
 	}
 
 	pub async fn reload_chats(&mut self)  {
-		let mut api = self.client.write().await;
+		let api_clone = self.client.clone();
+		self.await_state = AwaitState::Replace;
 
-		match api.get_chats(None, None).await {
-			Ok(chs) => self.chats = chs,
-			Err(err) => hint!("couldn't get chats: {}", err),
-		}
+		tokio::spawn(async move {
+			let mut api = api_clone.write().await;
 
-		self.last_height = 0;
+			let chats = api.get_chats(None, None).await;
+
+			if let Err(ref err) = chats {
+				hint!("couldn't reload chats: {}", err);
+			}
+
+			drop(api);
+
+			if let Ok(mut state) = STATE.write() {
+				state.new_chats = Some(chats);
+			}
+
+			hint!("reloaded chats");
+		});
 	}
 }

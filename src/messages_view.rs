@@ -32,6 +32,7 @@ pub struct MessagesView {
 	pub y_bounds: (u16, u16), // .0 is top, .1 is bottom
 	pub typing_idx: Option<usize>,
 	pub client: Arc<RwLock<APIClient>>,
+	pub await_state: AwaitState
 }
 
 impl MessagesView {
@@ -45,6 +46,7 @@ impl MessagesView {
 			last_height: 0,
 			y_bounds: (0, 0),
 			typing_idx: None,
+			await_state: AwaitState::Not,
 			client
 		}
 	}
@@ -358,68 +360,56 @@ impl MessagesView {
 		}
 	}
 
-	pub async fn load_in_conversation(&mut self, id: &str) -> anyhow::Result<bool> {
+	pub async fn load_in_conversation(&mut self, chat_id: &str) {
 		// load in the messages for a certain conversation
+		let api_clone = self.client.clone();
+		self.await_state = AwaitState::Replace;
+		let id = chat_id.to_owned();
 
-		let mut api = self.client.write().await;
+		tokio::spawn(async move {
+			let mut api = api_clone.write().await;
 
-		self.messages = match api.get_messages(id, None, None, None).await {
-			Ok(msgs) => msgs,
-			Err(err) => return Err(err),
-		};
+			let msgs = api.get_messages(&id, None, None, None).await
+				.map(|mut m| { m.reverse(); m });
 
-		drop(api);
+			if let Err(ref err) = msgs {
+				hint!("couldn't get messages: {}", err);
+			}
 
-		// cause ya gotta. SMServer just sends them like that
-		self.messages.reverse();
+			drop(api);
 
-		self.last_width = 0; // to force it to redraw next time
-		// set the selected message as the most recent one
-		self.selected_msg = self.messages.len() as u16 - 1;
-
-		Ok(true)
+			if let Ok(mut state) = STATE.write() {
+				state.new_msgs = Some(msgs);
+			}
+		});
 	}
 
 	pub async fn load_more_texts(&mut self) {
 		// load older texts; is triggered if you scroll up to a certain point
 		let old_len = self.messages.len();
+		let api_clone = self.client.clone();
 
-		let new_msgs_opt = if let Ok(mut state) = STATE.write() {
+		let chat = if let Ok(state) = STATE.read() {
 			if let Some(chat) = &state.current_chat {
-				// get the texts with the current chat,
-				// offset by how many we currently have loaded
-				let mut api = self.client.write().await;
+				chat.to_owned()
+			} else { return }
+		} else { return };
 
-				match api.get_messages(
-					chat, None, Some(self.messages.len() as u32), None
-				).await {
-					Ok(msgs) => Some(msgs),
-					Err(err) => {
-						state.hint_msg = format!("Failed to get messages: {}", err);
-						None
-					}
-				}
-			} else { None }
-		} else { None };
+		self.await_state = AwaitState::More;
 
-		if let Some(mut new_msgs) = new_msgs_opt {
-			if !new_msgs.is_empty() {
-				// add it before the existing chats
-				new_msgs.reverse();
-				new_msgs.append(&mut self.messages);
-				self.messages = new_msgs;
+		tokio::spawn(async move {
+			let mut api = api_clone.write().await;
 
-				// force it to redraw
-				self.selected_msg = old_len as u16;
-				self.last_height = 0;
+			let msgs = api.get_messages(
+				&chat, None, Some(old_len as u32), None
+			).await;
 
-				hint!("loaded in more messages");
-			} else {
-				// if the length is 0, then they've already loaded in
-				// all the texts
-				hint!("you have loaded in all the messages for this conversation");
+			drop(api);
+
+			if let Ok(mut state) = STATE.write() {
+				state.new_msgs = Some(msgs);
 			}
-		}
+		});
 	}
 
 	pub async fn new_text(&mut self, msg: Message) {
