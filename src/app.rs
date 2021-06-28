@@ -1079,7 +1079,12 @@ impl MainApp {
 		match self.msgs_view.await_state {
 			AwaitState::More => {
 				let mut mut_msgs = msgs;
-				self.msgs_view.messages.append(&mut mut_msgs);
+				mut_msgs.reverse();
+
+				self.msgs_view.selected_msg = self.msgs_view.messages.len() as u16;
+				mut_msgs.append(&mut self.msgs_view.messages);
+
+				self.msgs_view.messages = mut_msgs;
 			},
 			AwaitState::Replace => {
 				self.msgs_view.messages = msgs;
