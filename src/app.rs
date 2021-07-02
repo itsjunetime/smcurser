@@ -83,7 +83,7 @@ impl MainApp {
 				let conn_url = format!("{}{}/connect?id={}&key={}&sock_type=client",
 					scheme, url, id, set.password);
 
-				config.with_sock_url(conn_url)
+				config = config.with_sock_url(conn_url)
 					.with_rest(false);
 			} else {
 				let rest_url = format!("http{}://{}:{}/",
@@ -98,12 +98,12 @@ impl MainApp {
 					set.socket_port
 				);
 
-				config.with_rest_url(rest_url)
+				config = config.with_rest_url(rest_url)
 					.with_sock_url(sock_url)
 					.with_rest(true);
 			}
 
-			config.with_password(set.password.to_owned())
+			config = config.with_password(set.password.to_owned())
 				.with_timeout(set.timeout as usize)
 				.with_secure(set.secure);
 		}
