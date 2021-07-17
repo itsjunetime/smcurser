@@ -1,7 +1,6 @@
 /target
 /packages
 .DS_Store
-to_implement.md
 .vscode
 log.log
-spawned_threads.md
+Xargo.toml

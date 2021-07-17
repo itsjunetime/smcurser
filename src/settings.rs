@@ -14,6 +14,12 @@ use std::{
 	path::PathBuf
 };
 
+macro_rules! pnt{
+	($tui:expr, $msg:expr$(, $args:expr)*) => {
+		Utilities::print_msg(format!($msg$(, $args)*), $tui);
+	}
+}
+
 pub fn default_config() -> String {
 	let mut conf = config_dir();
 	conf.push("smcurser");
@@ -180,12 +186,7 @@ impl Settings {
 			) => {
 				match $arg.replace("--", "").as_str() {
 					$($long | $short => set_matches!($arg, $self $(, $op)*),)*
-					x => Utilities::print_msg(
-						format!(
-							"Option {} not recognized. ignoring...", x
-						),
-						tui_mode
-					),
+					x => pnt!(tui_mode, "Option {} not recognized. ignoring...", x)
 				}
 			};
 		}
@@ -244,10 +245,7 @@ impl Settings {
 						self.parse_args(parsed, false, false);
 					}
 				},
-				Err(err) => Utilities::print_msg(
-					format!("Could not parse config file as TOML: {}", err),
-					false
-				),
+				Err(err) => pnt!(false, "Could not parse config file as TOML: {}", err),
 			}
 		}
 	}
@@ -277,11 +275,8 @@ impl Settings {
 							if let Some(spec) = arr[color_spec].as_table() {
 
 								if spec.keys().len() != names.len() {
-									Utilities::print_msg(
-										format!("\x1b[18;1mError:\x1b[0m Your colorscheme {} does not contain the correct number \
-											of color specifiers. Please check the documentation", color_spec),
-										false
-									);
+									pnt!(false, "\x1b[18;1mError:\x1b[0m Your colorscheme {} does not contain the correct \
+										number of color specifiers. Please check the documentation", color_spec);
 
 									continue;
 								}
@@ -294,17 +289,11 @@ impl Settings {
 									let mut rgb: Vec<u8> = Vec::new();
 
 									if !names.contains(&key.as_str()) {
-										Utilities::print_msg(
-											format!("\x1b[18;1mError:\x1b[0m You have an incorrect specification in '{}': {}", color_spec, key),
-											false
-										);
+										pnt!(false, "\x1b[18;1mError:\x1b[0m You have an incorrect specification in '{}': {}", color_spec, key);
 
 										bad_spec = true;
 									} else if !spec[key].is_array() {
-										Utilities::print_msg(
-											format!("\x1b[18;1mError:\x1b[0m The color {} in scheme {} is not formatted correctly", key, color_spec),
-											false
-										);
+										pnt!(false, "\x1b[18;1mError:\x1b[0m The color {} in scheme {} is not formatted correctly", key, color_spec);
 
 										bad_spec = true;
 									} else if let Some(arr) =  spec[key].as_array() {
@@ -312,10 +301,7 @@ impl Settings {
 										for val in arr {
 											if let Some(uint) = val.as_integer() {
 												if uint > 255 || uint < 0 {
-													Utilities::print_msg(
-														"\x1b[18;1mError:\x1b[0m Please keep rgb values between 0 - 255, inclusive.".to_owned(),
-														false
-													);
+													pnt!(false, "\x1b[18;1mError\x1b[0m Please keep rgb values between 0 - 255, inclusive");
 
 													bad_spec = true;
 													break;
@@ -323,10 +309,7 @@ impl Settings {
 
 												rgb.push(uint as u8);
 											} else {
-												Utilities::print_msg(
-													"\x1b[18;1mError:\x1b[0m RGB values must all be UInts, between 0 - 255, inclusive".to_owned(),
-													false
-												);
+												pnt!(false, "\x1b[18;1mError:\x1b[0m RGB values must all be UInts, between 0 - 255, inclusive");
 
 												bad_spec = true;
 											}
@@ -354,10 +337,7 @@ impl Settings {
 						}
 					}
 				},
-				Err(err) => Utilities::print_msg(
-					format!("Could not parse colorschemes files as TOML: {}", err),
-					false
-				),
+				Err(err) => pnt!(false, "Could not parse colorschemes file as TOML: {}", err),
 			}
 		}
 	}
@@ -372,17 +352,12 @@ impl Settings {
 					Some(value)
 				},
 				Err(_) => {
-					let pstr = format!(
-						"Please enter a value of type {:#?} for the key {}",
-						type_name::<T>(), key
-					);
-					Utilities::print_msg(pstr, tui_mode);
+					pnt!(tui_mode, "Please enter a value of type {:#?} for the key {}", type_name::<T>(), key);
 					None
 				}
 			},
 			None => {
-				let pstr = format!("Please enter a value for the key {}", key);
-				Utilities::print_msg(pstr, tui_mode);
+				pnt!(tui_mode, "Please enter a value for the key {}", key);
 				None
 			}
 		}
@@ -402,7 +377,7 @@ impl Settings {
 		};
 
 		if tui_mode {
-			Utilities::print_msg(format!("set {} to {}", key, b), true);
+			pnt!(true, "set {} to {}", key, b);
 		}
 
 		b
