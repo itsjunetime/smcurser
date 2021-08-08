@@ -32,28 +32,29 @@ lazy_static! {
 async fn main() -> anyhow::Result<()> {
 	let mut args = args().collect::<Vec<String>>();
 	args.remove(0);
-	parse_args(args);
+
+	let mut set = SETTINGS.write().expect("Couldn't open settings");
+
+	set.parse_args(args, false, true);
 
 	// if they want help, just show that and do nothing else.
-	if let Ok(set) = SETTINGS.read() {
-		if set.show_help {
-			for s in CMD_HELP.iter() {
-				println!("{}", s);
-			}
-			return Ok(());
+	if set.show_help {
+		for s in CMD_HELP.iter() {
+			println!("{}", s);
 		}
+		return Ok(());
 	}
 
 	// if they have specified no host, then exit
 	// (since you need a host to communicate with)
-	if let Ok(set) = SETTINGS.read() {
-		if set.rest_host.is_empty() && set.remote_url.is_none() {
-			eprintln!(
-				"\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to"
-			);
-			return Ok(());
-		}
+	if set.rest_host.is_empty() && set.remote_url.is_none() {
+		eprintln!(
+			"\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to"
+		);
+		return Ok(());
 	}
+
+	drop(set);
 
 	let stdout = stdout();
 	let backend = CrosstermBackend::new(stdout);
@@ -68,12 +69,6 @@ async fn main() -> anyhow::Result<()> {
 		}
 		Ok(mut app) => app.main_loop(&mut terminal).await
 	}
-}
-
-fn parse_args(args: Vec<String>) {
-	let mut set = SETTINGS.write()
-		.expect("Couldn't open settings to write.");
-	set.parse_args(args, false, true);
 }
 
 const HELP_MSG: [&str; 33] = [
