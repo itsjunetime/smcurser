@@ -333,9 +333,9 @@ impl MessagesView {
 					self.y_bounds.1 = scroll as u16;
 				}
 			} else { // only if you have the last message selected
-				let scroll = self.line_list.len() as u16 + 1;
-				self.y_bounds.0 += scroll - self.y_bounds.1;
-				self.y_bounds.1 = scroll;
+				let scroll = self.line_list.len() as i32 + 1;
+				self.y_bounds.0 += std::cmp::max(scroll - self.y_bounds.1 as i32, 0) as u16;
+				self.y_bounds.1 = scroll as u16;
 			}
 		} else {
 			// have to convert to signed to prevent overflow
