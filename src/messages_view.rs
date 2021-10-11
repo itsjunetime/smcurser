@@ -19,7 +19,7 @@ use std::{
 	cmp::{min, max},
 	io::Stdout,
 };
-use futures_locks::RwLock;
+use tokio::sync::RwLock;
 use clipboard::{ClipboardProvider, ClipboardContext};
 
 pub struct MessagesView {
@@ -307,8 +307,11 @@ impl MessagesView {
 	}
 
 	pub fn scroll_none(&mut self, up: bool) {
-		let fut = self.scroll(up, 0);
-		futures::executor::block_on(fut);
+		tokio::task::block_in_place(|| {
+			tokio::runtime::Handle::current().block_on(async {
+				self.scroll(up, 0).await;
+			});
+		});
 	}
 
 	pub async fn scroll(&mut self, up: bool, distance: u16) {

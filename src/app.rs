@@ -24,7 +24,7 @@ use tui::{
 use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 use unicode_segmentation::UnicodeSegmentation;
 use sdk::commands::APICommand;
-use futures_locks::RwLock;
+use tokio::sync::RwLock;
 
 pub struct MainApp {
 	// index of currently selected conversation in the chats array
@@ -452,7 +452,6 @@ impl MainApp {
 
 				if has_chats {
 					let chats = if let Ok(mut state) = STATE.write() {
-						//let mut none_chats: Option<anyhow::Result<Vec<Conversation>>> = None;
 						let mut none_chats = None;
 						swap(&mut none_chats, &mut state.new_chats);
 						none_chats

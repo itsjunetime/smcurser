@@ -19,7 +19,7 @@ use std::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-use futures_locks::RwLock;
+use tokio::sync::RwLock;
 
 pub struct ChatsView {
 	pub scroll: u16,

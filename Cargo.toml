@@ -1,6 +1,6 @@
 [package]
 name = "smcurser"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Ian Welker <iandwelker@gmail.com>"]
 edition = "2018"
 
@@ -8,19 +8,23 @@ edition = "2018"
 
 [dependencies]
 lazy_static = "1.4.0"
-crossterm = "0.19.0"
-tui = { version = "0.15", default-features = false, features = ['crossterm'] }
+crossterm = "0.21.0"
+tui = { version = "0.16", default-features = false, features = ['crossterm'] }
 serde_json = "1.0.64"
-textwrap = "0.13.4"
-unicode-segmentation = "1.7.1"
+textwrap = "0.14.2"
+unicode-segmentation = "1.8.0"
 chrono = "0.4.19"
 toml = "0.5.8"
-dirs = "3.0.2"
-notify-rust = { version = "4.5.2", features = ["image"] }
-unicode-width = "0.1.8"
+dirs = "4.0.0"
+notify-rust = { version = "4.5.4", features = ["image"] }
+unicode-width = "0.1.9"
 sdk = { package = "smserver-rs-sdk", path = "./smserver-rs-sdk" }
-tokio = { version = "1.6.0", features = ["full"] }
-anyhow = "1.0.40"
-futures = "0.3.15"
-futures-locks = "0.6"
+tokio = { version = "1.12.0", features = ["macros", "rt-multi-thread"] }
+anyhow = "1.0.44"
+# futures = "0.3.17"
 clipboard = "0.5.0"
+
+[profile.release]
+opt-level = 2
+lto = "fat"
+codegen-units = 1
