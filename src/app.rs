@@ -223,7 +223,7 @@ impl MainApp {
 		while !self.quit_app {
 			self.draw(term)?;
 
-			let _ = self.get_input(&term).await;
+			let _ = self.get_input(term).await;
 
 			if self.redraw_all {
 				// term.resize forces everything to redraw
@@ -711,7 +711,7 @@ impl MainApp {
 				// scroll up or down in the selected box
 				'k' | 'j' => self.scroll(ch == 'k', distance).await,
 				// will add more later maybe
-				_ => return,
+				_ => {},
 			}
 		}
 	}
@@ -720,7 +720,7 @@ impl MainApp {
 		let res = if let Ok(state) = STATE.read() {
 			if let Some(ref chat) = state.current_chat {
 				let mut api = self.client.write().await;
-				api.send_typing(&chat, active).await
+				api.send_typing(chat, active).await
 			} else {
 				Ok(())
 			}
@@ -819,7 +819,7 @@ impl MainApp {
 							.chat_identifier
 							.to_owned();
 
-						let load = self.msgs_view.load_in_conversation(&chat);
+						let load = self.msgs_view.load_in_conversation(chat);
 						let reload = self.chats_view.reload_chats();
 
 						tokio::join!(load, reload);
@@ -833,7 +833,7 @@ impl MainApp {
 
 				let mut api = self.client.write().await;
 
-				let success = match api.delete_chat(&chat).await {
+				let success = match api.delete_chat(chat).await {
 					Err(err) => {
 						hint!("Failed to delete conversation : {}", err);
 						false
@@ -1035,7 +1035,7 @@ impl MainApp {
 					if text.message_type == MessageType::Typing {
 						let name = text.sender.as_ref().unwrap_or(id);
 						Utilities::show_notification(
-							&name,
+							name,
 							&format!("{} is typing...", name)
 						);
 					}
@@ -1182,7 +1182,7 @@ impl MainApp {
 
 				let mut api = self.client.write().await;
 
-				match api.send_tapback(&guid, idx as u16, None).await {
+				match api.send_tapback(guid, idx as u16, None).await {
 					Err(err) => hint!("could not send tapback: {}", err),
 					Ok(_) => hint!("sent tapback :)"),
 				}
