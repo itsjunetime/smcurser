@@ -16,7 +16,7 @@ use std::{
 
 macro_rules! pnt{
 	($tui:expr, $msg:expr$(, $args:expr)*) => {
-		Utilities::print_msg(format!($msg$(, $args)*), $tui);
+		Utilities::print_msg(format!($msg$(, $args)*), $tui)
 	}
 }
 
@@ -177,7 +177,7 @@ impl Settings {
 			};
 
 			($arg:ident,$self:ident,flag) => {
-				self.$self = self.get_bool_from_it(&mut it, $arg, tui_mode);
+				self.$self = self.get_bool_from_it(&mut it, $arg, tui_mode)
 			};
 
 			(

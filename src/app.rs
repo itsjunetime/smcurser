@@ -588,6 +588,10 @@ impl MainApp {
 								// display the new text that came in
 								// (since it will be loaded in with the
 								// conversation).
+								//
+								// I feel like there's still potential for a race
+								// condition with this workaround but I haven't found
+								// it yet
 								if let Ok(mut state) = STATE.write() {
 									state.awaiting_new_convo = true;
 								}
@@ -751,8 +755,7 @@ impl MainApp {
 			":q" => self.quit_app = true,
 			// select a chat
 			":c" => if !splits.is_empty() && !splits[0].is_empty() {
-				let index = splits[0].parse::<usize>();
-				match index {
+				match splits[0].parse::<usize>() {
 					Ok(idx) => self.load_in_conversation(idx).await,
 					Err(_) => hint!("Cannot convert '{}' to an int", splits[0]),
 				}
@@ -781,13 +784,12 @@ impl MainApp {
 			},
 			// open an attachment by index
 			":a" => if !splits.is_empty() {
-				let index = splits[0].parse::<usize>();
-				match index {
+				match splits[0].parse::<usize>() {
 					Ok(idx) => self.msgs_view.open_attachment(idx),
 					Err(_) => hint!("Cannot convert {} to an int", splits[0]),
 				}
 			} else {
-				hint!("Please inset an index");
+				hint!("Please input an index (e.g. ':a 2')");
 			},
 			// send files
 			":f" => self.send_attachments(splits).await,
@@ -815,14 +817,15 @@ impl MainApp {
 			":dt" => {
 				if let Some(ls) = self.selected_chat {
 					if self.msgs_view.delete_current_text().await {
+						// we could `join!` these async stuff but they happen basically instantly
+						// (since everything is thrown onto tokio) and it's not worth the string
+						// copy that would be necessary
+						self.chats_view.reload_chats().await;
+
 						let chat = &self.chats_view.chats[ls]
-							.chat_identifier
-							.to_owned();
+							.chat_identifier;
 
-						let load = self.msgs_view.load_in_conversation(chat);
-						let reload = self.chats_view.reload_chats();
-
-						tokio::join!(load, reload);
+						self.msgs_view.load_in_conversation(chat).await;
 					}
 				}
 			},
@@ -1173,7 +1176,8 @@ impl MainApp {
 	pub async fn send_tapback(&self, tap: &str) {
 		let msgs = ["love", "like", "dislike", "laugh", "emphasize", "question"];
 		let guid = &self.msgs_view.messages[
-			self.msgs_view.selected_msg as usize].guid;
+			self.msgs_view.selected_msg as usize
+		].guid;
 
 		// ensure that the tapback type that they specified is in the options
 		if let Some(idx) = msgs.iter().position(|c| *c == tap) {
