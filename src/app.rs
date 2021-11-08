@@ -10,7 +10,7 @@ use crate::{
 };
 use std::{
 	io::{Stdout, Error},
-	mem::swap,
+	mem::take,
 	cmp::{min, max},
 	sync::mpsc
 };
@@ -434,9 +434,7 @@ impl MainApp {
 				if has_unread {
 					let none_text = if let Ok(mut state) = STATE.write() {
 						// swap the new text out for `None`
-						let mut none_text: Option<Message> = None;
-						swap(&mut none_text, &mut state.new_text);
-						none_text
+						take(&mut state.new_text)
 					} else { None };
 
 					// send the new text to the load in function
@@ -452,9 +450,7 @@ impl MainApp {
 
 				if has_chats {
 					let chats = if let Ok(mut state) = STATE.write() {
-						let mut none_chats = None;
-						swap(&mut none_chats, &mut state.new_chats);
-						none_chats
+						take(&mut state.new_chats)
 					} else { None };
 
 					if let Some(res) = chats {
@@ -475,9 +471,7 @@ impl MainApp {
 
 				if has_msgs {
 					let msgs = if let Ok(mut state) = STATE.write() {
-						let mut none_msgs = None;
-						swap(&mut none_msgs, &mut state.new_msgs);
-						none_msgs
+						take(&mut state.new_msgs)
 					} else { None };
 
 					if let Some(res) = msgs {
