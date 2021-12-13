@@ -1,15 +1,11 @@
+use crate::*;
 use chrono::prelude::*;
 use notify_rust::Notification;
-use std::{
-	io::prelude::*,
-	fs::OpenOptions,
-};
-use crate::*;
+use std::{fs::OpenOptions, io::prelude::*};
 
 pub struct Utilities;
 
 impl Utilities {
-
 	pub fn date_pad_string(date: i64, width: usize) -> String {
 		let unix_timestamp = (date / 1000000000) + 978307200;
 		let naive = NaiveDateTime::from_timestamp(unix_timestamp, 0);
@@ -21,8 +17,7 @@ impl Utilities {
 	}
 
 	pub fn show_notification(title: &str, msg: &str) {
-		let mut image_dir = dirs::config_dir()
-			.expect("Could not get configuration directory");
+		let mut image_dir = dirs::config_dir().expect("Could not get configuration directory");
 		image_dir.push("smcurser");
 		image_dir.push("icon.png");
 
@@ -59,5 +54,4 @@ impl Utilities {
 			println!("{}", msg)
 		}
 	}
-
 }

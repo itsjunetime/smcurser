@@ -1,30 +1,22 @@
-use sdk::models::*;
-use crate::{
-	*,
-	chats_view::*,
-	messages_view::*,
-	input_view::*,
-	colorscheme::*,
-	utilities::*,
-	state::*,
-};
-use std::{
-	io::{Stdout, Error},
-	mem::take,
-	cmp::{min, max},
-	sync::mpsc
-};
+use crate::{chats_view::*, input_view::*, messages_view::*, state::*, utilities::*, *};
 use core::time::Duration;
+use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
+use sdk::commands::APICommand;
+use sdk::models::*;
+use std::{
+	cmp::{max, min},
+	io::{Error, Stdout},
+	mem::take,
+	sync::mpsc,
+};
+use tokio::sync::RwLock;
 use tui::{
 	layout::{Constraint, Direction, Layout},
-	text::{Span, Spans},
-	widgets::{Block, Borders, Paragraph, Wrap, BorderType},
 	style::Style,
+	text::{Span, Spans},
+	widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
-use crossterm::event::{read, Event, KeyCode, KeyModifiers, poll};
 use unicode_segmentation::UnicodeSegmentation;
-use sdk::commands::APICommand;
-use tokio::sync::RwLock;
 
 pub struct MainApp {
 	// index of currently selected conversation in the chats array
@@ -44,69 +36,87 @@ pub struct MainApp {
 	input_view: InputView,
 	address_view: InputView,
 	compose_body_view: InputView,
+	settings: Settings,
 }
 
 impl MainApp {
-	pub async fn new() -> anyhow::Result<MainApp> {
+	pub async fn new(set: Settings) -> anyhow::Result<MainApp> {
 		let mut address_view = InputView::new();
 		let mut compose_body_view = InputView::new();
 		let mut config = sdk::SDKConfig::default();
 
-		if let Ok(set) = SETTINGS.read() {
-			address_view.custom_title = Some(set.to_title.to_owned());
-			compose_body_view.custom_title = Some(set.compose_title.to_owned());
+		address_view.custom_title = Some(set.to_title.to_owned());
+		compose_body_view.custom_title = Some(set.compose_title.to_owned());
 
-			if let Some(ref url) = set.remote_url {
-				if !set.secure {
-					eprintln!("\x1b[31;1mERROR:\x1b[0m \
-						If you use a remote connection, it must be secure");
-					return Err(sdk::error::SDKError::ConfigBlocked.into());
-				}
-
-				let id = match set.remote_id {
-					Some(ref id) => id,
-					None => {
-						eprintln!("\x1b[31;1mERROR:\x1b[0m \
-							If you input a remote address, \
-							please input a remote id");
-						return Err(sdk::error::SDKError::ConfigBlocked.into());
-					}
-				};
-
-				let scheme = if url.starts_with("wss://") || url.starts_with("ws://")
-					|| url.starts_with("http://") || url.starts_with("https://") {
-					""
-				} else {
-					"wss://"
-				};
-
-				let conn_url = format!("{}{}/connect?id={}&key={}&sock_type=client",
-					scheme, url, id, set.password);
-
-				config = config.with_sock_url(conn_url)
-					.with_rest(false);
-			} else {
-				let rest_url = format!("http{}://{}:{}/",
-					if set.secure { "s" } else { "" },
-					set.rest_host,
-					set.rest_port,
+		if let Some(ref url) = set.remote_url {
+			if !set.secure {
+				eprintln!(
+					"\x1b[31;1mERROR:\x1b[0m \
+					If you use a remote connection, it must be secure"
 				);
-
-				let sock_url = format!("ws{}://{}:{}/",
-					if set.secure { "s" } else { "" },
-					set.rest_host,
-					set.socket_port
-				);
-
-				config = config.with_rest_url(rest_url)
-					.with_sock_url(sock_url)
-					.with_rest(true);
+				return Err(sdk::error::SDKError::ConfigBlocked.into());
 			}
 
-			config = config.with_password(set.password.to_owned())
-				.with_timeout(set.timeout as usize)
-				.with_secure(set.secure);
+			let id = match set.remote_id {
+				Some(ref id) => id,
+				None => {
+					eprintln!(
+						"\x1b[31;1mERROR:\x1b[0m \
+						If you input a remote address, \
+						please input a remote id"
+					);
+					return Err(sdk::error::SDKError::ConfigBlocked.into());
+				}
+			};
+
+			let scheme = if ["wss", "ws", "http", "https"]
+				.iter()
+				.any(|s| url.starts_with(&format!("{}://", s)))
+			{
+				""
+			} else {
+				"wss://"
+			};
+
+			let conn_url = format!(
+				"{}{}/connect?id={}&key={}&sock_type=client",
+				scheme, url, id, set.password
+			);
+
+			config = config.with_sock_url(conn_url).with_rest(false);
+		} else {
+			let rest_url = format!(
+				"http{}://{}:{}/",
+				if set.secure {
+					"s"
+				} else {
+					""
+				},
+				set.rest_host,
+				set.rest_port,
+			);
+
+			let sock_url = format!(
+				"ws{}://{}:{}/",
+				if set.secure {
+					"s"
+				} else {
+					""
+				},
+				set.rest_host,
+				set.socket_port
+			);
+
+			config = config
+				.with_rest_url(rest_url)
+				.with_sock_url(sock_url)
+				.with_rest(true);
 		}
+
+		config = config
+			.with_password(set.password.to_owned())
+			.with_timeout(set.timeout as usize)
+			.with_secure(set.secure);
 
 		let (sender, receiver) = mpsc::sync_channel(0);
 
@@ -116,10 +126,7 @@ impl MainApp {
 
 		let client_arc = Arc::new(RwLock::new(client));
 
-		let chats_view = match ChatsView::new(client_arc.clone()).await {
-			Ok(chv) => chv,
-			Err(err) => return Err(err)
-		};
+		let chats_view = ChatsView::new(client_arc.clone()).await;
 
 		let msgs_view = MessagesView::new(client_arc.clone());
 
@@ -131,6 +138,7 @@ impl MainApp {
 			help_scroll: 0,
 			input_view: InputView::new(),
 			client: client_arc,
+			settings: set,
 			chats_view,
 			msgs_view,
 			address_view,
@@ -138,45 +146,46 @@ impl MainApp {
 		})
 	}
 
-	pub fn spawn_receiver(
-		receiver: mpsc::Receiver<sdk::socket::SocketResponse>
-	) {
+	pub fn spawn_receiver(receiver: mpsc::Receiver<sdk::socket::SocketResponse>) {
 		tokio::spawn(async move {
 			while let Ok(msg) = receiver.recv() {
 				match msg.command {
 					APICommand::Typing => {
-						let typ = msg.typing_data()
-							.expect("Cannot turn SocketResponse \
-								into TypingNotification");
+						let typ = msg.typing_data().expect(
+							"Cannot turn SocketResponse \
+								into TypingNotification",
+						);
 
 						let new_text = match typ.active {
 							true => Message::typing(&typ.chat),
-							_ => Message::idle(&typ.chat)
+							_ => Message::idle(&typ.chat),
 						};
 
 						if let Ok(mut state) = STATE.write() {
 							state.new_text = Some(new_text);
 						}
-					},
+					}
 					APICommand::NewMessage => {
-						let text = msg.new_message_data()
-							.expect("Cannot turn SocketResponse \
-								into NewMessageNotification");
+						let text = msg.new_message_data().expect(
+							"Cannot turn SocketResponse \
+								into NewMessageNotification",
+						);
 
 						if let Ok(mut state) = STATE.write() {
 							state.new_text = Some(text.message);
 						}
-					},
+					}
 					APICommand::BatteryStatus => {
-						let data = msg.battery_status_data()
-							.expect("Cannot turn SocketResponse \
-								into TypingNotification");
+						let data = msg.battery_status_data().expect(
+							"Cannot turn SocketResponse \
+								into TypingNotification",
+						);
 
 						let status = if data.charging {
 							match data.percentage.round() as u8 {
 								100 => BatteryStatus::Full,
 								0 => BatteryStatus::Dead,
-								x => BatteryStatus::Charging(x)
+								x => BatteryStatus::Charging(x),
 							}
 						} else {
 							BatteryStatus::Unplugged(data.percentage.round() as u8)
@@ -185,7 +194,7 @@ impl MainApp {
 						if let Ok(mut state) = STATE.write() {
 							state.battery_status = status;
 						}
-					},
+					}
 					_ => (),
 				}
 			}
@@ -193,9 +202,9 @@ impl MainApp {
 	}
 
 	pub async fn main_loop(
-		&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>
+		&mut self,
+		term: &mut Terminal<CrosstermBackend<Stdout>>,
 	) -> anyhow::Result<()> {
-
 		// authenticate with the host right off the bat,
 		// just so things don't time out later
 		let mut api = self.client.write().await;
@@ -203,8 +212,10 @@ impl MainApp {
 		if api.uses_rest {
 			match api.authenticate().await {
 				Err(err) => return Err(err),
-				Ok(auth) => if !auth {
-					return Err(sdk::error::SDKError::UnAuthenticated.into());
+				Ok(auth) => {
+					if !auth {
+						return Err(sdk::error::SDKError::UnAuthenticated.into());
+					}
 				}
 			}
 		}
@@ -212,9 +223,7 @@ impl MainApp {
 		drop(api);
 
 		// necessary to not print every character the user inputs
-		if let Err(err) = crossterm::terminal::enable_raw_mode() {
-			return Err(err.into());
-		}
+		crossterm::terminal::enable_raw_mode()?;
 
 		// clears the screen
 		print!("\x1b[2J\x1b[1;1H");
@@ -233,178 +242,148 @@ impl MainApp {
 		}
 
 		// make the terminal echo everything input again
-		match crossterm::terminal::disable_raw_mode() {
-			Ok(_) => Ok(()),
-			Err(err) => Err(err.into()),
-		}
+		Ok(crossterm::terminal::disable_raw_mode()?)
 	}
 
-	pub fn draw(
-		&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>
-	) -> Result<(), Error> {
+	pub fn draw(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Error> {
 		// gotta make sure we can actually access the settings
-		let (help_title, colorscheme) = if let Ok(set) = SETTINGS.read() {
-			(set.help_title.to_owned(), Colorscheme::from(&set.colorscheme))
-		} else {
-			("| help |".to_owned(), Colorscheme::from("forest"))
-		};
+		let colorscheme = &self.settings.colorscheme;
 
 		// this just draws the actual tui display.
 		term.draw(|f| {
 			let size = f.size();
 
-			match self.selected_box {
-				DisplayBox::Help => {
-					// if we're showing the help box,
-					// just draw the help box and nothing else
-					let text: Vec<Spans> = HELP_MSG.iter()
-						.map(|m| Spans::from(vec![Span::raw(*m)])).collect();
-					let help_msg_widget = Paragraph::new(text)
-						.block(
-							Block::default()
-								.title(help_title)
-								.borders(Borders::ALL)
-								.border_type(BorderType::Rounded)
-								.border_style(Style::default()
-									.fg(colorscheme.selected_box))
-						)
-						.wrap(Wrap { trim: true })
-						.scroll((self.help_scroll, 0));
+			//match self.selected_box {
+			if let DisplayBox::Help = self.selected_box {
+				// if we're showing the help box,
+				// just draw the help box and nothing else
+				let text: Vec<Spans> = HELP_MSG
+					.iter()
+					.map(|m| Spans::from(vec![Span::raw(*m)]))
+					.collect();
+				let help_msg_widget = Paragraph::new(text)
+					.block(
+						Block::default()
+							.title(self.settings.help_title.as_str())
+							.borders(Borders::ALL)
+							.border_type(BorderType::Rounded)
+							.border_style(Style::default().fg(colorscheme.selected_box)),
+					)
+					.wrap(Wrap { trim: true })
+					.scroll((self.help_scroll, 0));
 
-					f.render_widget(help_msg_widget, size);
-				},
-				_ => {
-					// we have to get this string first so that we know how long it is
-					// to make it left aligned
-					let battery_msg = if let Ok(state) = STATE.read() {
-						state.battery_string()
-					} else {
-						"0%, dead".to_owned()
-					};
+				f.render_widget(help_msg_widget, size);
+			} else {
+				// we have to get this string first so that we know how long it is
+				// to make it left aligned
+				let battery_msg = read_state!().battery_string();
 
-					// set up layouts
-					let main_layout = Layout::default()
+				// set up layouts
+				let main_layout = Layout::default()
+					.direction(Direction::Vertical)
+					.constraints(
+						[
+							Constraint::Min(5),
+							Constraint::Length(3),
+							Constraint::Length(1),
+						]
+						.as_ref(),
+					)
+					.split(size);
+
+				let content_layout = Layout::default()
+					.direction(Direction::Horizontal)
+					.constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+					.split(main_layout[0]);
+
+				let bottom_layout = Layout::default()
+					.direction(Direction::Horizontal)
+					.constraints(
+						[
+							Constraint::Min(1),
+							Constraint::Length(battery_msg.len() as u16 + 1),
+						]
+						.as_ref(),
+					)
+					.split(main_layout[2]);
+
+				let chats_selected = self.selected_box == DisplayBox::Chats;
+				let input_cursor = self.selected_box != DisplayBox::ComposeAddress
+					&& self.selected_box != DisplayBox::ComposeBody;
+
+				// always draw the chats_view and input_view since it doesn't
+				// mattter to them if the compose display is
+				// currently selected
+				self.chats_view
+					.draw_view(f, content_layout[0], chats_selected, &self.settings);
+				self.input_view
+					.draw_view(f, main_layout[1], false, input_cursor, &self.settings);
+
+				// if the compose display is up...
+				if DisplayBox::ComposeAddress == self.selected_box
+					|| DisplayBox::ComposeBody == self.selected_box
+				{
+					// set up a new layout
+					let message_layout = Layout::default()
 						.direction(Direction::Vertical)
 						.constraints(
 							[
-								Constraint::Min(5),
 								Constraint::Length(3),
-								Constraint::Length(1),
-							].as_ref()
-						).split(size);
+								Constraint::Min(3),
+								Constraint::Length(3),
+							]
+							.as_ref(),
+						)
+						.split(content_layout[1]);
 
-					let content_layout = Layout::default()
-						.direction(Direction::Horizontal)
-						.constraints(
-							[
-								Constraint::Percentage(30),
-								Constraint::Percentage(70),
-							].as_ref()
-						).split(main_layout[0]);
-
-					let bottom_layout = Layout::default()
-						.direction(Direction::Horizontal)
-						.constraints(
-							[
-								Constraint::Min(1),
-								Constraint::Length(battery_msg.len() as u16 + 1),
-							].as_ref()
-						).split(main_layout[2]);
-
-					let chats_selected = self.selected_box == DisplayBox::Chats;
-					let input_cursor = self.selected_box !=
-						DisplayBox::ComposeAddress &&
-						self.selected_box != DisplayBox::ComposeBody;
-
-					// always draw the chats_view and input_view since it doesn't
-					// mattter to them if the compose display is
-					// currently selected
-					self.chats_view.draw_view(
+					// draw the address view above the messages view,
+					// and the body view under the messages view.
+					// The messages view will just be a bit squished.
+					let address_cursor = self.selected_box == DisplayBox::ComposeAddress;
+					self.address_view.draw_view(
 						f,
-						content_layout[0],
-						chats_selected
-					);
-					self.input_view.draw_view(
-						f,
-						main_layout[1],
-						false,
-						input_cursor
+						message_layout[0],
+						address_cursor,
+						address_cursor,
+						&self.settings,
 					);
 
-					// if the compose display is up...
-					if DisplayBox::ComposeAddress == self.selected_box
-						|| DisplayBox::ComposeBody == self.selected_box {
+					self.msgs_view
+						.draw_view(f, message_layout[1], false, &self.settings);
 
-						// set up a new layout
-						let message_layout = Layout::default()
-							.direction(Direction::Vertical)
-							.constraints(
-								[
-									Constraint::Length(3),
-									Constraint::Min(3),
-									Constraint::Length(3)
-								].as_ref()
-							).split(content_layout[1]);
-
-						// draw the address view above the messages view,
-						// and the body view under the messages view.
-						// The messages view will just be a bit squished.
-						let address_cursor =
-							self.selected_box == DisplayBox::ComposeAddress;
-						self.address_view.draw_view(f, message_layout[0],
-							address_cursor, address_cursor);
-
-						self.msgs_view.draw_view(
-							f, message_layout[1], false
-						);
-
-						self.compose_body_view.draw_view(f, message_layout[2],
-							!address_cursor, !address_cursor);
-
-					} else {
-						// if it's not, just draw the messages view like normal
-						self.msgs_view.draw_view(
-							f,
-							content_layout[1],
-							!chats_selected
-						);
-					}
-
-					// create a span for the help box add the help string
-					let hint_msg = if let Ok(state) = STATE.read() {
-						state.hint_msg.to_owned()
-					} else {
-						"type :h to get help :)".to_owned()
-					};
-
-					let help_span = vec![
-						Spans::from(vec![
-							Span::styled(
-								hint_msg,
-								Style::default()
-									.fg(colorscheme.hints_box)
-							)
-						])
-					];
-
-					let help_widget = Paragraph::new(help_span);
-					f.render_widget(help_widget, bottom_layout[0]);
-
-					// and show the battery percentage and status in the
-					// bottom right corner
-					let batt_span = vec![
-						Spans::from(vec![
-							Span::styled(
-								battery_msg,
-								Style::default()
-									.fg(colorscheme.text_color)
-							)
-						])
-					];
-
-					let batt_widget = Paragraph::new(batt_span);
-					f.render_widget(batt_widget, bottom_layout[1]);
+					self.compose_body_view.draw_view(
+						f,
+						message_layout[2],
+						!address_cursor,
+						!address_cursor,
+						&self.settings,
+					);
+				} else {
+					// if it's not, just draw the messages view like normal
+					self.msgs_view
+						.draw_view(f, content_layout[1], !chats_selected, &self.settings);
 				}
+
+				// create a span for the help box add the help string
+				let hint_msg = read_state!().hint_msg.to_owned();
+
+				let help_span = vec![Spans::from(vec![Span::styled(
+					hint_msg,
+					Style::default().fg(colorscheme.hints_box),
+				)])];
+
+				let help_widget = Paragraph::new(help_span);
+				f.render_widget(help_widget, bottom_layout[0]);
+
+				// and show the battery percentage and status in the
+				// bottom right corner
+				let batt_span = vec![Spans::from(vec![Span::styled(
+					battery_msg,
+					Style::default().fg(colorscheme.text_color),
+				)])];
+
+				let batt_widget = Paragraph::new(batt_span);
+				f.render_widget(batt_widget, bottom_layout[1]);
 			}
 		})?;
 
@@ -412,7 +391,8 @@ impl MainApp {
 	}
 
 	async fn get_input(
-		&mut self, term: &Terminal<CrosstermBackend<Stdout>>
+		&mut self,
+		term: &Terminal<CrosstermBackend<Stdout>>,
 	) -> crossterm::Result<()> {
 		// we have to loop this so that if it gets a character/input
 		// we don't want, we can just grab the next character/input instead.
@@ -427,15 +407,15 @@ impl MainApp {
 		loop {
 			if !poll(Duration::from_millis(20)).unwrap() {
 				// first check if there's actually an unread text
-				let has_unread = if let Ok(state) = STATE.read() {
-					state.new_text.is_some()
-				} else { false };
+				let has_unread = read_state!().new_text.is_some();
 
 				if has_unread {
 					let none_text = if let Ok(mut state) = STATE.write() {
 						// swap the new text out for `None`
 						take(&mut state.new_text)
-					} else { None };
+					} else {
+						None
+					};
 
 					// send the new text to the load in function
 					if let Some(txt) = none_text {
@@ -444,14 +424,14 @@ impl MainApp {
 					break;
 				}
 
-				let has_chats = if let Ok(state) = STATE.read() {
-					state.new_chats.is_some()
-				} else { false };
+				let has_chats = read_state!().new_chats.is_some();
 
 				if has_chats {
 					let chats = if let Ok(mut state) = STATE.write() {
 						take(&mut state.new_chats)
-					} else { None };
+					} else {
+						None
+					};
 
 					if let Some(res) = chats {
 						match res {
@@ -465,22 +445,26 @@ impl MainApp {
 					break;
 				}
 
-				let has_msgs = if let Ok(state) = STATE.read() {
-					state.new_msgs.is_some()
-				} else { false };
+				let has_msgs = read_state!().new_msgs.is_some();
 
 				if has_msgs {
 					let msgs = if let Ok(mut state) = STATE.write() {
 						take(&mut state.new_msgs)
-					} else { None };
+					} else {
+						None
+					};
 
 					if let Some(res) = msgs {
 						match res {
-							Ok(ms) => if ms.is_empty() {
-								hint!("you have loaded in all the messages for this conversation");
-							} else {
-								self.loaded_in_messages(ms).await;
-							},
+							Ok(ms) => {
+								if ms.is_empty() {
+									hint!(
+										"you have loaded in all the messages for this conversation"
+									);
+								} else {
+									self.loaded_in_messages(ms).await;
+								}
+							}
 							Err(err) => hint!("failed to load in messages: {}", err),
 						}
 					}
@@ -496,7 +480,7 @@ impl MainApp {
 				let (new_width, new_height) = {
 					match term.size() {
 						Ok(size) => (size.width, size.height),
-						Err(_) => (0, 0)
+						Err(_) => (0, 0),
 					}
 				};
 
@@ -507,16 +491,15 @@ impl MainApp {
 				// we also check if the websocket has disconnected. This is so
 				// that we can show a message to let the user know it's
 				// disconnected.
-				let disc = if let Ok(state) = STATE.read() {
-					state.websocket_state != WebSocketState::Connected
-				} else { false };
+				let disc = read_state!().websocket_state != WebSocketState::Connected;
 
-				if disc { break };
-
+				if disc {
+					break;
+				};
 			} else {
 				let (code, modifiers) = match read()? {
 					Event::Key(event) => (event.code, event.modifiers),
-					_ => continue
+					_ => continue,
 				};
 
 				match code {
@@ -524,21 +507,18 @@ impl MainApp {
 					// route it through the correct one.
 					KeyCode::Backspace | KeyCode::Tab | KeyCode::Esc => {
 						match self.selected_box {
-							DisplayBox::ComposeBody =>
-								self.compose_body_view.route_keycode(code),
+							DisplayBox::ComposeBody => self.compose_body_view.route_keycode(code),
 
-							DisplayBox::ComposeAddress =>
-								self.address_view.route_keycode(code),
+							DisplayBox::ComposeAddress => self.address_view.route_keycode(code),
 
 							_ => {
 								self.input_view.route_keycode(code);
-								if code == KeyCode::Backspace &&
-									self.input_view.input.is_empty() {
+								if code == KeyCode::Backspace && self.input_view.input.is_empty() {
 									self.send_typing_in_current(false).await;
 								}
-							},
+							}
 						};
-					},
+					}
 
 					KeyCode::Enter => {
 						match self.selected_box {
@@ -547,14 +527,13 @@ impl MainApp {
 								// address box to the body box; loads in
 								// the messages to the msgs_view
 								// just like in the real iMessage app.
-								self.selected_box =
-									DisplayBox::ComposeBody;
+								self.selected_box = DisplayBox::ComposeBody;
 
-								let _ = self.msgs_view
-									.load_in_conversation(
-										&self.address_view.input
-									).await;
-							},
+								let _ = self
+									.msgs_view
+									.load_in_conversation(&self.address_view.input)
+									.await;
+							}
 							DisplayBox::ComposeBody => {
 								let chat = &self.address_view.input;
 
@@ -563,10 +542,10 @@ impl MainApp {
 								// body, just send it.
 								self.send_text(
 									Some(chat.to_owned()),
-									Some(self.compose_body_view.input
-										.to_owned()),
-									None
-								).await;
+									Some(self.compose_body_view.input.to_owned()),
+									None,
+								)
+								.await;
 
 								self.selected_box = DisplayBox::Messages;
 
@@ -589,9 +568,11 @@ impl MainApp {
 								if let Ok(mut state) = STATE.write() {
 									state.awaiting_new_convo = true;
 								}
-							},
-							_ => if !self.input_view.input.is_empty() {
-								self.handle_full_input().await;
+							}
+							_ => {
+								if !self.input_view.input.is_empty() {
+									self.handle_full_input().await;
+								}
 							}
 						}
 					}
@@ -605,28 +586,28 @@ impl MainApp {
 						// but that's not possible since the user can't specify
 						// how much to scroll
 						match self.selected_box {
-							DisplayBox::ComposeAddress =>
-								self.address_view.scroll(right, 1),
-							DisplayBox::ComposeBody =>
-								self.compose_body_view.scroll(right, 1),
-							_ => if !self.input_view.input.is_empty() {
-								self.input_view.scroll(
-									code == KeyCode::Right, 1);
-							} else {
-								// if there's no input,
-								// just switch the selected box
-								self.switch_selected_box();
-							},
+							DisplayBox::ComposeAddress => self.address_view.scroll(right, 1),
+							DisplayBox::ComposeBody => self.compose_body_view.scroll(right, 1),
+							_ => {
+								if !self.input_view.input.is_empty() {
+									self.input_view.scroll(code == KeyCode::Right, 1);
+								} else {
+									// if there's no input,
+									// just switch the selected box
+									self.switch_selected_box();
+								}
+							}
 						}
-					},
-					KeyCode::Up | KeyCode::Down =>
+					}
+					KeyCode::Up | KeyCode::Down => {
 						if self.selected_box != DisplayBox::ComposeBody
-						&& self.selected_box != DisplayBox::ComposeAddress {
-
-						// tab up/down to more recent/less
-						// recent executed command
-						self.input_view.change_command(code == KeyCode::Up);
-					},
+							&& self.selected_box != DisplayBox::ComposeAddress
+						{
+							// tab up/down to more recent/less
+							// recent executed command
+							self.input_view.change_command(code == KeyCode::Up);
+						}
+					}
 					// ctrl+c gets hijacked by crossterm, so I wanted to manually
 					// add in a way for people to invoke it to exit if that's
 					// what they're used to.
@@ -636,41 +617,38 @@ impl MainApp {
 							// compose view if you don't want to go through with
 							// the new message
 							match self.selected_box {
-								DisplayBox::ComposeAddress |
-								DisplayBox::ComposeBody =>
-									self.selected_box = DisplayBox::Messages,
+								DisplayBox::ComposeAddress | DisplayBox::ComposeBody => {
+									self.selected_box = DisplayBox::Messages
+								}
 								_ => self.quit_app = true,
 							}
-						} else if c.is_digit(10) &&
-							self.input_view.input.is_empty() &&
-							self.selected_box != DisplayBox::ComposeBody &&
-							self.selected_box != DisplayBox::ComposeAddress {
-
+						} else if c.is_digit(10)
+							&& self.input_view.input.is_empty()
+							&& self.selected_box != DisplayBox::ComposeBody
+							&& self.selected_box != DisplayBox::ComposeAddress
+						{
 							// test for digits to allow for vim-like scrolling,
 							// multiple lines at once.
 							distance = format!("{}{}", distance, c);
 							continue;
-
 						} else {
 							let dist: u16 = match distance.len() {
 								0 => 1,
-								_ => distance.parse().unwrap_or(1)
+								_ => distance.parse().unwrap_or(1),
 							};
 
 							// compose boxes just get the input input,
 							// they don't handle it specially.
 							match self.selected_box {
-								DisplayBox::ComposeAddress =>
-									self.address_view.append_char(c),
-								DisplayBox::ComposeBody =>
-									self.compose_body_view.append_char(c),
+								DisplayBox::ComposeAddress => self.address_view.append_char(c),
+								DisplayBox::ComposeBody => self.compose_body_view.append_char(c),
 								_ => self.handle_input_char(c, dist).await,
 							}
 						}
 					}
 					_ => continue,
 				};
-				break
+				break;
 			}
 		}
 
@@ -684,16 +662,12 @@ impl MainApp {
 		if !self.input_view.input.is_empty() || ch == ':' {
 			self.input_view.append_char(ch);
 
-			let graphemes = self.input_view.input
-				.graphemes(true)
-				.collect::<Vec<&str>>();
+			let graphemes = self.input_view.input.graphemes(true).collect::<Vec<&str>>();
 
 			// set the outgoing websocket message in the state if we're
 			// writing a message
 			if graphemes.len() > 3 {
-				let three_chars = graphemes[..3]
-					.join("")
-					.to_lowercase();
+				let three_chars = graphemes[..3].join("").to_lowercase();
 
 				if three_chars == ":s " {
 					self.send_typing_in_current(true).await;
@@ -703,42 +677,37 @@ impl MainApp {
 			match ch {
 				'h' | 'l' => self.switch_selected_box(),
 				// quit out of help display if it is showing
-				'q' | 'Q' => if let DisplayBox::Help = self.selected_box {
-					self.selected_box = DisplayBox::Chats;
-				},
+				'q' | 'Q' => {
+					if let DisplayBox::Help = self.selected_box {
+						self.selected_box = DisplayBox::Chats;
+					}
+				}
 				// scroll up or down in the selected box
 				'k' | 'j' => self.scroll(ch == 'k', distance).await,
 				// will add more later maybe
-				_ => {},
+				_ => {}
 			}
 		}
 	}
 
 	async fn send_typing_in_current(&self, active: bool) {
-		let res = if let Ok(state) = STATE.read() {
-			if let Some(ref chat) = state.current_chat {
-				let mut api = self.client.write().await;
-				api.send_typing(chat, active).await
-			} else {
-				Ok(())
+		if let Some(ref chat) = read_state!().current_chat {
+			let mut api = self.client.write().await;
+			if api.send_typing(chat, active).await.is_err() {
+				hint!(
+					"unable to send typing notifications to host; \
+					you may want to check your connection"
+				);
 			}
-		} else {
-			Ok(())
-		};
-
-		if res.is_err() {
-			hint!("unable to send typing notifications to host; \
-				you may want to check your connection");
 		}
 	}
 
 	async fn handle_full_input(&mut self) {
 		// add the command that it's handling to the most recent commands
 		// so you can tab up to it
-		self.input_view.last_commands
-			.insert(
-				0, self.input_view.input.to_owned()
-			);
+		self.input_view
+			.last_commands
+			.insert(0, self.input_view.input.to_owned());
 
 		// cmd is the first bit before a space, e.g. the ':s' in ':s hey friend'
 		let mut splits = self.input_view.input.split(' ').collect::<Vec<&str>>();
@@ -748,50 +717,55 @@ impl MainApp {
 			// quit the app
 			":q" => self.quit_app = true,
 			// select a chat
-			":c" => if !splits.is_empty() && !splits[0].is_empty() {
-				match splits[0].parse::<usize>() {
-					Ok(idx) => self.load_in_conversation(idx).await,
-					Err(_) => hint!("Cannot convert '{}' to an int", splits[0]),
+			":c" => {
+				if !splits.is_empty() && !splits[0].is_empty() {
+					match splits[0].parse::<usize>() {
+						Ok(idx) => self.load_in_conversation(idx).await,
+						Err(_) => hint!("Cannot convert '{}' to an int", splits[0]),
+					}
+				} else {
+					hint!("Please insert an index");
 				}
-			} else {
-				hint!("Please insert an index");
-			},
+			}
 			// show help
 			":h" => self.selected_box = DisplayBox::Help,
 			// send a text
 			":s" => {
 				let cmd = splits.join(" ");
 				self.send_text(None, Some(cmd), None).await;
-			},
+			}
 			// reload the chats and redraw anything in case of
 			// graphical inconsistencies
 			":r" => {
 				self.redraw_all = true;
 				self.chats_view.reload_chats().await;
-			},
+			}
 			// modify settings (b for bind)
 			":b" => {
-				let ops = splits.iter()
+				let ops = splits
+					.iter()
 					.map(|o| o.to_string())
 					.collect::<Vec<String>>();
 				self.bind_var(ops);
-			},
+			}
 			// open an attachment by index
-			":a" => if !splits.is_empty() {
-				match splits[0].parse::<usize>() {
-					Ok(idx) => self.msgs_view.open_attachment(idx),
-					Err(_) => hint!("Cannot convert {} to an int", splits[0]),
+			":a" => {
+				if !splits.is_empty() {
+					match splits[0].parse::<usize>() {
+						Ok(idx) => self.msgs_view.open_attachment(idx),
+						Err(_) => hint!("Cannot convert {} to an int", splits[0]),
+					}
+				} else {
+					hint!("Please input an index (e.g. ':a 2')");
 				}
-			} else {
-				hint!("Please input an index (e.g. ':a 2')");
-			},
+			}
 			// send files
 			":f" => self.send_attachments(splits).await,
 			// send a tapback
 			":t" => {
 				let tapback = splits.join("");
 				self.send_tapback(&tapback).await;
-			},
+			}
 			// start a new composition
 			":n" => {
 				self.selected_box = DisplayBox::ComposeAddress;
@@ -816,58 +790,61 @@ impl MainApp {
 						// copy that would be necessary
 						self.chats_view.reload_chats().await;
 
-						let chat = &self.chats_view.chats[ls]
-							.chat_identifier;
+						let chat = &self.chats_view.chats[ls].chat_identifier;
 
 						self.msgs_view.load_in_conversation(chat).await;
 					}
 				}
-			},
+			}
 			// delete a conversation
-			":dc" => if !splits.is_empty() {
-				// this is if they specified a conversation to delete
-				let chat = splits[0];
+			":dc" => {
+				if !splits.is_empty() {
+					// this is if they specified a conversation to delete
+					let chat = splits[0];
 
-				let mut api = self.client.write().await;
+					let mut api = self.client.write().await;
 
-				let success = match api.delete_chat(chat).await {
-					Err(err) => {
-						hint!("Failed to delete conversation : {}", err);
-						false
-					},
-					Ok(_) => {
-						hint!("deleted conversation :)");
-
-						// reload chats so that it doesn't show up anymore
-						//self.chats_view.reload_chats().await;
-						true
-					},
-				};
-
-				drop(api);
-
-				if success {
-					self.chats_view.reload_chats().await;
-
-					if let Some(ls) = self.selected_chat {
-						let sel_chat = &self.chats_view.chats[ls]
-							.chat_identifier;
-
-						if sel_chat.as_str() == chat {
-							self.msgs_view.load_in_conversation("").await;
+					let success = match api.delete_chat(chat).await {
+						Err(err) => {
+							hint!("Failed to delete conversation : {}", err);
+							false
 						}
+						Ok(_) => {
+							hint!("deleted conversation :)");
+
+							// reload chats so that it doesn't show up anymore
+							//self.chats_view.reload_chats().await;
+							true
+						}
+					};
+
+					drop(api);
+
+					if success {
+						self.chats_view.reload_chats().await;
+
+						if let Some(ls) = self.selected_chat {
+							let sel_chat = &self.chats_view.chats[ls].chat_identifier;
+
+							if sel_chat.as_str() == chat {
+								self.msgs_view.load_in_conversation("").await;
+							}
+						}
+
+						self.selected_chat = None;
 					}
+				} else if let Some(ls) = self.selected_chat {
+					// if they didn't specify a conversation,
+					// let them know how to delete this conversation
+					let chat = &self.chats_view.chats[ls].chat_identifier;
 
-					self.selected_chat = None;
+					hint!(
+						"Please enter ':dc {}' if you'd like \
+					to delete this conversation",
+						chat
+					);
 				}
-			} else if let Some(ls) = self.selected_chat {
-				// if they didn't specify a conversation,
-				// let them know how to delete this conversation
-				let chat = &self.chats_view.chats[ls].chat_identifier;
-
-				hint!("Please enter ':dc {}' if you'd like \
-					to delete this conversation", chat);
-			},
+			}
 			// copy the text of the currently selected message
 			// to the system clipboard
 			":y" => self.msgs_view.copy_current_to_clipboard(),
@@ -898,21 +875,15 @@ impl MainApp {
 			DisplayBox::Help => {
 				// these comparisons are to ensure it doesn't scroll too far
 				if up {
-					self.help_scroll = max(
-						self.help_scroll as i32 - distance as i32,
-						0
-					) as u16;
+					self.help_scroll = max(self.help_scroll as i32 - distance as i32, 0) as u16;
 				} else {
-					self.help_scroll = min(
-						HELP_MSG.len() as u16,
-						self.help_scroll + distance
-					);
+					self.help_scroll = min(HELP_MSG.len() as u16, self.help_scroll + distance);
 				}
-			},
+			}
 			_ => {
 				// this shouldn't ever be called
 				hint!("sorry, I haven't implemented scrolling for this box yet :/");
-			},
+			}
 		}
 	}
 
@@ -951,10 +922,7 @@ impl MainApp {
 				let name = match &text.sender {
 					Some(name) => name.to_owned(),
 					None => {
-						let chat_id = text.chat_identifier
-							.as_ref()
-							.unwrap()
-							.to_owned();
+						let chat_id = text.chat_identifier.as_ref().unwrap().to_owned();
 
 						let mut api = self.client.write().await;
 
@@ -970,18 +938,12 @@ impl MainApp {
 
 				// only show notification if it's not from me &&
 				// they want notifications
-				let show_notif = if let Ok(set) = SETTINGS.read() {
-					set.notifications && !text.is_from_me
-				} else {
-					!text.is_from_me
-				};
+				let show_notif = self.settings.notifications && !text.is_from_me;
 
 				// load_in will be true if I just composed and sent a
 				// conversation. It's a kinda hacky workaround to prevent text
 				// duplication when creating a new conversation from SMCurser
-				let load_in = if let Ok(state) = STATE.read() {
-					state.awaiting_new_convo
-				} else { false };
+				let load_in = read_state!().awaiting_new_convo;
 
 				// If we did just compose and send a converation,
 				// load in the top conversation.
@@ -1005,10 +967,8 @@ impl MainApp {
 						// only load in the new text to the msgs_view if it's
 						// not a conversation we just created
 						if idx == ls && !load_in {
-
 							self.selected_chat = Some(0);
-							self.msgs_view.new_text(text).await;
-
+							self.msgs_view.new_text(text, &self.settings).await;
 						} else if idx > ls {
 							// increase the index of our currently selected chat
 							// if the old index is above it, since it moving down
@@ -1022,7 +982,7 @@ impl MainApp {
 				if show_notif {
 					Utilities::show_notification(&name, &text_content);
 				}
-			},
+			}
 			MessageType::Typing | MessageType::Idle => {
 				// the new message could also be a typing or idle message
 
@@ -1031,19 +991,13 @@ impl MainApp {
 					// into msgs_view
 					if text.message_type == MessageType::Typing {
 						let name = text.sender.as_ref().unwrap_or(id);
-						Utilities::show_notification(
-							name,
-							&format!("{} is typing...", name)
-						);
+						Utilities::show_notification(name, &format!("{} is typing...", name));
 					}
 
 					// if we have selected a chat...
 					if let Some(ls) = self.selected_chat {
 						// and it matches the identifier in the new message...
-						if id == self.chats_view.chats[ls]
-							.chat_identifier
-							.as_str() {
-
+						if id == self.chats_view.chats[ls].chat_identifier.as_str() {
 							if text.message_type == MessageType::Idle {
 								self.msgs_view.set_idle().await;
 							} else {
@@ -1052,7 +1006,7 @@ impl MainApp {
 						}
 					}
 				}
-			},
+			}
 		}
 	}
 
@@ -1061,9 +1015,9 @@ impl MainApp {
 			AwaitState::More => {
 				let mut mut_chats = chats;
 				self.chats_view.chats.append(&mut mut_chats);
-			},
+			}
 			AwaitState::Replace => self.chats_view.chats = chats,
-			_ => return
+			_ => return,
 		}
 
 		self.chats_view.last_height = 0;
@@ -1081,12 +1035,12 @@ impl MainApp {
 				mut_msgs.append(&mut self.msgs_view.messages);
 
 				self.msgs_view.messages = mut_msgs;
-			},
+			}
 			AwaitState::Replace => {
 				self.msgs_view.messages = msgs;
 				self.msgs_view.selected_msg = self.msgs_view.messages.len() as u16 - 1;
-			},
-			_ => return
+			}
+			_ => return,
 		}
 
 		self.msgs_view.last_height = 0;
@@ -1098,17 +1052,16 @@ impl MainApp {
 		&self,
 		chat_id: Option<String>,
 		text: Option<String>,
-		files: Option<Vec<String>>
+		files: Option<Vec<String>>,
 	) {
 		// make chat_id an option so that it can be manually specified
 		// for when you're making a new conversation, or omitted,
 		// when you're sending a text in the current chat
 		let chat_option = match chat_id {
 			Some(ch) => Some(ch),
-			None => self.selected_chat
-				.map(|sel|
-					self.chats_view.chats[sel].chat_identifier.to_owned()
-				)
+			None => self
+				.selected_chat
+				.map(|sel| self.chats_view.chats[sel].chat_identifier.to_owned()),
 		};
 
 		// tell the websocket that I'm not typing anymore
@@ -1121,9 +1074,7 @@ impl MainApp {
 			tokio::spawn(async move {
 				let mut api = api_clone.write().await;
 
-				let res = api.send_message(
-					id, text, None, files, None
-				).await;
+				let res = api.send_message(id, text, None, files, None).await;
 
 				match res {
 					Ok(_) => hint!("text sent :)"),
@@ -1162,22 +1113,17 @@ impl MainApp {
 		// `:b input_title this is a title`
 		new_ops.push(val.join(" "));
 
-		if let Ok(mut set) = SETTINGS.write() {
-			set.parse_args(new_ops, true, false);
-		}
+		self.settings.parse_args(new_ops, true, false);
 	}
 
 	pub async fn send_tapback(&self, tap: &str) {
-		let msgs = ["love", "like", "dislike", "laugh", "emphasize", "question"];
-		let guid = &self.msgs_view.messages[
-			self.msgs_view.selected_msg as usize
-		].guid;
+		const MSGS: [&str; 6] = ["love", "like", "dislike", "laugh", "emphasize", "question"];
+		let guid = &self.msgs_view.messages[self.msgs_view.selected_msg as usize].guid;
 
 		// ensure that the tapback type that they specified is in the options
-		if let Some(idx) = msgs.iter().position(|c| *c == tap) {
+		if let Some(idx) = MSGS.iter().position(|c| *c == tap) {
 			// ensure that we've actually selected a conversation
 			if self.chats_view.last_selected.is_some() {
-
 				let mut api = self.client.write().await;
 
 				match api.send_tapback(guid, idx as u16, None).await {
@@ -1186,9 +1132,10 @@ impl MainApp {
 				}
 			}
 		} else {
-			hint!("Did not recognize tapback option {}; possible options are: {}",
+			hint!(
+				"Did not recognize tapback option {}; possible options are: {}",
 				tap,
-				msgs.join(", ")
+				MSGS.join(", ")
 			);
 		}
 	}
@@ -1207,5 +1154,5 @@ enum DisplayBox {
 pub enum AwaitState {
 	More,
 	Replace,
-	Not
+	Not,
 }

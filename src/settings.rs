@@ -1,17 +1,9 @@
 #![allow(clippy::manual_range_contains)]
 
-use crate::{
-	utilities::Utilities,
-	colorscheme::*,
-};
+use crate::{colorscheme::*, utilities::Utilities};
 use std::{
-	collections::HashMap,
-	fs::read_to_string,
-	slice::Iter,
-	iter::Peekable,
-	any::type_name,
-	str::FromStr,
-	path::PathBuf
+	any::type_name, collections::HashMap, fs::read_to_string, iter::Peekable, path::PathBuf,
+	slice::Iter, str::FromStr,
 };
 
 macro_rules! pnt{
@@ -37,23 +29,21 @@ pub fn default_colorschemes() -> String {
 }
 
 pub fn config_dir() -> PathBuf {
-	let mut conf = dirs::config_dir()
-		.unwrap_or_else(|| {
-			let mut home = dirs::home_dir()
-				.expect("Unable to get your home directory");
+	let mut conf = dirs::config_dir().unwrap_or_else(|| {
+		let mut home = dirs::home_dir().expect("Unable to get your home directory");
 
-			if cfg!(windows) {
-				home.push("AppData");
-				home.push("Local");
-			} else if cfg!(target_os = "macos") {
-				home.push("Library");
-				home.push("Application Support");
-			} else {
-				home.push(".config");
-			}
+		if cfg!(windows) {
+			home.push("AppData");
+			home.push("Local");
+		} else if cfg!(target_os = "macos") {
+			home.push("Library");
+			home.push("Application Support");
+		} else {
+			home.push(".config");
+		}
 
-			home
-		});
+		home
+	});
 
 	conf.push("smcurser");
 	conf
@@ -80,7 +70,7 @@ pub struct Settings {
 	pub help_title: String,
 	pub to_title: String,
 	pub compose_title: String,
-	pub colorscheme: String,
+	pub colorscheme: Colorscheme,
 	pub poll_input: u16,
 	pub timeout: u16,
 	pub show_help: bool,
@@ -112,7 +102,7 @@ impl Settings {
 			help_title: "| help |".to_owned(),
 			to_title: "| to: |".to_owned(),
 			compose_title: "| message: |".to_owned(),
-			colorscheme: "forest".to_owned(),
+			colorscheme: Colorscheme::with_name("forest", &None),
 			poll_input: 10,
 			timeout: 10,
 			show_help: false,
@@ -122,18 +112,16 @@ impl Settings {
 		}
 	}
 
-	pub fn parse_args(
-		&mut self, mut args: Vec<String>, tui_mode: bool, parse_config: bool
-	) {
+	pub fn parse_args(&mut self, mut args: Vec<String>, tui_mode: bool, parse_config: bool) {
 		if parse_config {
-			let conf_pos = args.iter().position(|a|
-				a.as_str() == "--config" || a.as_str() == "-c"
-			);
+			let conf_pos = args
+				.iter()
+				.position(|a| a.as_str() == "--config" || a.as_str() == "-c");
 
 			if let Some(p) = conf_pos {
 				if p + 1 < args.len() {
-					let _ = args.drain(p..p+1).next();
-					let new_conf = args.drain(p..p+1).next();
+					let _ = args.drain(p..p + 1).next();
+					let new_conf = args.drain(p..p + 1).next();
 					if let Some(conf) = new_conf {
 						self.config_file = conf;
 					}
@@ -142,14 +130,14 @@ impl Settings {
 
 			self.parse_config_file();
 
-			let color_pos = args.iter().position(|a|
-				a.as_str() == "--theme-file" || a.as_str() == "-f"
-			);
+			let color_pos = args
+				.iter()
+				.position(|a| a.as_str() == "--theme-file" || a.as_str() == "-f");
 
 			if let Some(pos) = color_pos {
 				if pos + 1 < args.len() {
-					let _ = args.drain(pos..pos+1).next();
-					let new_colors = args.drain(pos..pos+1).next();
+					let _ = args.drain(pos..pos + 1).next();
+					let new_colors = args.drain(pos..pos + 1).next();
 					if let Some(cls) = new_colors {
 						self.colorscheme_file = cls;
 					}
@@ -164,6 +152,12 @@ impl Settings {
 		macro_rules! set_matches{
 			// we have lots of overrides so that we can include however many
 			// arguments we want in the macro call
+			($arg:ident,colorscheme) => {
+				if let Some(name) = it.next() {
+					self.colorscheme = Colorscheme::with_name(name, &self.custom_colorschemes)
+				}
+			};
+
 			($arg:ident,$self:ident) => {
 				if let Some(val) = self.get_val_from_it(&mut it, $arg, tui_mode) {
 					self.$self = val;
@@ -192,7 +186,8 @@ impl Settings {
 		}
 
 		while let Some(arg) = it.next() {
-			set_matches!(arg,
+			set_matches!(
+				arg,
 				("rest-host", "-u", rest_host),
 				("fallback-host", "-b", fallback_host),
 				("rest-port", "-p", rest_port),
@@ -210,8 +205,8 @@ impl Settings {
 				("help-title", "-e", help_title),
 				("to-title", "-q", to_title),
 				("compose-title", "-j", compose_title),
-				("theme", "-t", colorscheme),
 				("poll-input", "-l", poll_input),
+				("theme", "-t", colorscheme),
 				("timeout", "-g", timeout),
 				("remote-url", "-r", remote_url, op),
 				("remote-id", "-i", remote_id, op),
@@ -228,7 +223,6 @@ impl Settings {
 		let contents_try = read_to_string(&self.config_file);
 
 		if let Ok(contents) = contents_try {
-
 			let toml_value = contents.parse::<toml::Value>();
 			match toml_value {
 				Ok(val) => {
@@ -244,7 +238,7 @@ impl Settings {
 
 						self.parse_args(parsed, false, false);
 					}
-				},
+				}
 				Err(err) => pnt!(false, "Could not parse config file as TOML: {}", err),
 			}
 		}
@@ -254,7 +248,6 @@ impl Settings {
 		let contents_try = read_to_string(&self.colorscheme_file);
 
 		if let Ok(contents) = contents_try {
-
 			let toml_value = contents.parse::<toml::Value>();
 			match toml_value {
 				Ok(val) => {
@@ -268,12 +261,11 @@ impl Settings {
 							"chat_indicator",
 							"unread_indicator",
 							"text_color",
-							"hints_box"
+							"hints_box",
 						];
 
 						for color_spec in arr.keys() {
 							if let Some(spec) = arr[color_spec].as_table() {
-
 								if spec.keys().len() != names.len() {
 									pnt!(false, "\x1b[18;1mError:\x1b[0m Your colorscheme {} does not contain the correct \
 										number of color specifiers. Please check the documentation", color_spec);
@@ -282,8 +274,7 @@ impl Settings {
 								}
 
 								let mut bad_spec = false;
-								let mut map: HashMap<String, Vec<u8>> =
-									HashMap::new();
+								let mut map: HashMap<String, Vec<u8>> = HashMap::new();
 
 								for key in spec.keys() {
 									let mut rgb: Vec<u8> = Vec::new();
@@ -296,8 +287,7 @@ impl Settings {
 										pnt!(false, "\x1b[18;1mError:\x1b[0m The color {} in scheme {} is not formatted correctly", key, color_spec);
 
 										bad_spec = true;
-									} else if let Some(arr) =  spec[key].as_array() {
-
+									} else if let Some(arr) = spec[key].as_array() {
 										for val in arr {
 											if let Some(uint) = val.as_integer() {
 												if uint > 255 || uint < 0 {
@@ -318,41 +308,51 @@ impl Settings {
 
 									map.insert(key.to_owned(), rgb);
 
-									if bad_spec { break; }
-
+									if bad_spec {
+										break;
+									}
 								}
 
-								if bad_spec { continue; }
+								if bad_spec {
+									continue;
+								}
 
-								let colorscheme = Colorscheme::from_specs(color_spec.to_owned(), map);
+								let colorscheme =
+									Colorscheme::from_specs(color_spec.to_owned(), map);
 
 								if self.custom_colorschemes.is_none() {
 									self.custom_colorschemes = Some(vec![colorscheme]);
 								} else {
-									self.custom_colorschemes.as_mut()
-										.unwrap()
-										.push(colorscheme);
+									self.custom_colorschemes.as_mut().unwrap().push(colorscheme);
 								}
 							}
 						}
 					}
-				},
+				}
 				Err(err) => pnt!(false, "Could not parse colorschemes file as TOML: {}", err),
 			}
 		}
 	}
 
 	fn get_val_from_it<T: FromStr + 'static>(
-		&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool
+		&self,
+		it: &mut Peekable<Iter<String>>,
+		key: &str,
+		tui_mode: bool,
 	) -> Option<T> {
 		match it.peek() {
 			Some(to_parse) => match to_parse.parse() {
 				Ok(value) => {
 					let _ = it.next();
 					Some(value)
-				},
+				}
 				Err(_) => {
-					pnt!(tui_mode, "Please enter a value of type {:#?} for the key {}", type_name::<T>(), key);
+					pnt!(
+						tui_mode,
+						"Please enter a value of type {:#?} for the key {}",
+						type_name::<T>(),
+						key
+					);
 					None
 				}
 			},
@@ -363,16 +363,16 @@ impl Settings {
 		}
 	}
 
-	fn get_bool_from_it(
-		&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool
-	) -> bool {
+	fn get_bool_from_it(&self, it: &mut Peekable<Iter<String>>, key: &str, tui_mode: bool) -> bool {
 		let b = match it.peek() {
 			None => true,
-			Some(val) => if let Ok(b_val) = val.parse() {
-				let _ = it.next();
-				b_val
-			} else {
-				true
+			Some(val) => {
+				if let Ok(b_val) = val.parse() {
+					let _ = it.next();
+					b_val
+				} else {
+					true
+				}
 			}
 		};
 

@@ -1,26 +1,19 @@
-use crate::{
-	*,
-	models::*,
-	utilities::*,
-};
-use sdk::{
-	models::*,
-	api::*,
-};
-use tui::{
-	layout::Rect,
-	text::{Span, Spans},
-	widgets::{Block, Borders, Paragraph, BorderType},
-	style::{Style, Modifier},
-	terminal::Frame,
-};
-use unicode_width::UnicodeWidthStr;
+use crate::{models::*, utilities::*, *};
+use clipboard::{ClipboardContext, ClipboardProvider};
+use sdk::{api::*, models::*};
 use std::{
-	cmp::{min, max},
+	cmp::{max, min},
 	io::Stdout,
 };
 use tokio::sync::RwLock;
-use clipboard::{ClipboardProvider, ClipboardContext};
+use tui::{
+	layout::Rect,
+	style::{Modifier, Style},
+	terminal::Frame,
+	text::{Span, Spans},
+	widgets::{Block, BorderType, Borders, Paragraph},
+};
+use unicode_width::UnicodeWidthStr;
 
 pub struct MessagesView {
 	pub selected_msg: u16,
@@ -32,7 +25,7 @@ pub struct MessagesView {
 	pub y_bounds: (u16, u16), // .0 is top, .1 is bottom
 	pub typing_idx: Option<usize>,
 	pub client: Arc<RwLock<APIClient>>,
-	pub await_state: AwaitState
+	pub await_state: AwaitState,
 }
 
 impl MessagesView {
@@ -47,7 +40,7 @@ impl MessagesView {
 			y_bounds: (0, 0),
 			typing_idx: None,
 			await_state: AwaitState::Not,
-			client
+			client,
 		}
 	}
 
@@ -55,54 +48,46 @@ impl MessagesView {
 		&mut self,
 		frame: &mut Frame<'_, CrosstermBackend<Stdout>>,
 		rect: Rect,
-		is_selected: bool
+		is_selected: bool,
+		settings: &Settings,
 	) {
 		// get the title and colorscheme
-		let (title, colorscheme) = if let Ok(set) = SETTINGS.read() {
-			(
-				set.messages_title.to_owned(),
-				colorscheme::Colorscheme::from(&set.colorscheme)
-			)
-		} else {
-			("| messages: |".to_owned(), colorscheme::Colorscheme::from("forest"))
-		};
+		let colorscheme = &settings.colorscheme;
 
 		// recreate the vector that is used for drawing
 		// if the terminal has been resized
 		if rect.width != self.last_width || rect.height != self.last_height {
-			self.rerender_list(rect);
+			self.rerender_list(rect, settings);
 
 			self.last_width = rect.width;
 			self.last_height = rect.height;
 		}
 
 		// create the vector of spans that will be drawn to the terminal
-		let item_list: Vec<Spans> = self.line_list.iter()
-			.map(| l | {
+		let item_list: Vec<Spans> = self
+			.line_list
+			.iter()
+			.map(|l| {
 				let style = match l.message_type {
 					// set the style for the specific line based on its type
-					MessageLineType::Blank |
-					MessageLineType::TimeDisplay |
-					MessageLineType::Text =>
-						Style::default().fg(colorscheme.text_color),
-					MessageLineType::Sender =>
-						Style::default()
+					MessageLineType::Blank
+					| MessageLineType::TimeDisplay
+					| MessageLineType::Text => Style::default().fg(colorscheme.text_color),
+					MessageLineType::Sender => Style::default()
 						.fg(colorscheme.text_color)
 						.add_modifier(Modifier::ITALIC | Modifier::BOLD),
-					MessageLineType::Underline =>
-						Style::default().fg(
-							if l.relative_index as u16 == self.selected_msg {
-								colorscheme.selected_underline
-							} else if l.from_me {
-								colorscheme.my_underline
-							} else {
-								colorscheme.their_underline
-							}
-						),
-					MessageLineType::Typing =>
-						Style::default()
-							.fg(colorscheme.text_color)
-							.add_modifier(Modifier::ITALIC),
+					MessageLineType::Underline => {
+						Style::default().fg(if l.relative_index as u16 == self.selected_msg {
+							colorscheme.selected_underline
+						} else if l.from_me {
+							colorscheme.my_underline
+						} else {
+							colorscheme.their_underline
+						})
+					}
+					MessageLineType::Typing => Style::default()
+						.fg(colorscheme.text_color)
+						.add_modifier(Modifier::ITALIC),
 				};
 
 				Spans::from(vec![Span::styled(l.text.as_str(), style)])
@@ -112,19 +97,16 @@ impl MessagesView {
 		// this will serve as the border for the messages widget
 		let messages_border = Block::default()
 			.borders(Borders::ALL)
-			.title(title)
+			.title(settings.messages_title.as_str())
 			.border_type(BorderType::Rounded)
-			.border_style(Style::default().fg(
-				if is_selected {
-					colorscheme.selected_box
-				} else {
-					colorscheme.unselected_box
-				}
-			));
+			.border_style(Style::default().fg(if is_selected {
+				colorscheme.selected_box
+			} else {
+				colorscheme.unselected_box
+			}));
 
 		// create the widget and scroll it to the correct location
-		let mut messages_widget = Paragraph::new(item_list)
-			.block(messages_border);
+		let mut messages_widget = Paragraph::new(item_list).block(messages_border);
 
 		// scroll to the correct location
 		if !self.messages.is_empty() && self.line_list.len() as u16 >= rect.height {
@@ -133,15 +115,10 @@ impl MessagesView {
 		frame.render_widget(messages_widget, rect);
 	}
 
-	pub fn rerender_list(&mut self, rect: Rect) {
+	pub fn rerender_list(&mut self, rect: Rect, settings: &Settings) {
 		// this recreates the line list. It is in a separate function
 		// from the draw_view so that it can only be called conditionally,
 		// and you don't have to call it every single time the view is redrawn.
-		let underline = if let Ok(set) = SETTINGS.read() {
-			set.chat_underline.to_owned()
-		} else {
-			"▔".to_owned()
-		};
 
 		let msg_width = rect.width as usize - 2;
 		let opts = textwrap::Options::new((msg_width as f64 * 0.6) as usize);
@@ -153,144 +130,126 @@ impl MessagesView {
 		// This gets a vector of spans for all the messages. It handles stuff like
 		// inserting the time when necessary, adding the underlines, splitting the
 		// texts into lines of correct length, etc.
-		self.line_list = self.messages.iter()
+		self.line_list = self
+			.messages
+			.iter()
 			.enumerate()
-			.fold(
-				Vec::new(), |mut vec, (i, msg)| {
-					// check, add time display if necessary
-					if msg.date - last_timestamp >= 3600000000000 {
-						let date_pad = Utilities::date_pad_string(
-							msg.date, msg_width
-						);
-						let mut spans = vec![
-							MessageLine::blank(i),
-							MessageLine::new(
-								date_pad,
-								MessageLineType::TimeDisplay,
-								i,
-								msg.is_from_me
-							),
-							MessageLine::blank(i),
-						];
-						vec.append(&mut spans);
-					}
+			.fold(Vec::new(), |mut vec, (i, msg)| {
+				// check, add time display if necessary
+				if msg.date - last_timestamp >= 3600000000000 {
+					let date_pad = Utilities::date_pad_string(msg.date, msg_width);
+					let mut spans = vec![
+						MessageLine::blank(i),
+						MessageLine::new(date_pad, MessageLineType::TimeDisplay, i, msg.is_from_me),
+						MessageLine::blank(i),
+					];
+					vec.append(&mut spans);
+				}
 
-					// Set the sender's name above their text
-					// if it needs to be shown
-					if let Some(send) = &msg.sender {
-						if *send != last_sender ||
-							msg.date - last_timestamp >= 3600000000000 {
-							if msg.date - last_timestamp < 3600000000000 {
-								vec.push(MessageLine::blank(i));
-							}
-
-							vec.push(
-								MessageLine::new(
-									send.to_owned(),
-									MessageLineType::Sender,
-									i,
-									msg.is_from_me
-								)
-							);
+				// Set the sender's name above their text
+				// if it needs to be shown
+				if let Some(send) = &msg.sender {
+					if *send != last_sender || msg.date - last_timestamp >= 3600000000000 {
+						if msg.date - last_timestamp < 3600000000000 {
+							vec.push(MessageLine::blank(i));
 						}
 
-						last_sender = send.to_owned();
+						vec.push(MessageLine::new(
+							send.to_owned(),
+							MessageLineType::Sender,
+							i,
+							msg.is_from_me,
+						));
 					}
 
-					last_timestamp = msg.date;
+					last_sender = send.to_owned();
+				}
 
-					// split the text into its wrapped lines
-					let text_lines: Vec<String> = textwrap::fill(
-							msg.text.as_str(), opts.clone()
-						)
-						.split('\n')
-						.map(|l| l.to_owned())
+				last_timestamp = msg.date;
+
+				// split the text into its wrapped lines
+				let text_lines: Vec<String> = textwrap::fill(msg.text.as_str(), opts.clone())
+					.split('\n')
+					.map(|l| l.to_owned())
+					.collect();
+
+				// find the length of the longest line
+				// (length calculated by utf-8 chars)
+				let mut max = text_lines.iter().fold(0, |m, l| {
+					let len = UnicodeWidthStr::width(l.as_str());
+					if len > m {
+						len
+					} else {
+						m
+					}
+				});
+
+				// do attachments
+				for att in msg.attachments.iter() {
+					let filename = att.path.split('/').last().unwrap_or_default();
+
+					let att_str = format!("Attachment {}: {}", att_temp.len(), filename);
+
+					if att_str.len() > max {
+						max = att_str.len();
+					}
+
+					let att_line = if msg.is_from_me {
+						let space = msg_width - att_str.len();
+						format!("{}{}", " ".repeat(space), att_str)
+					} else {
+						att_str
+					};
+
+					vec.push(MessageLine::new(
+						att_line,
+						MessageLineType::Text,
+						i,
+						msg.is_from_me,
+					));
+					att_temp.push(att.path.to_owned());
+				}
+
+				let space = msg_width - max;
+
+				if !msg.text.is_empty() {
+					// add padding for my texts, put into spans
+					let mut lines: Vec<MessageLine> = text_lines
+						.into_iter()
+						.map(|l| {
+							let text = if msg.is_from_me {
+								format!("{}{}", " ".repeat(space), l)
+							} else {
+								l
+							};
+
+							MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
+						})
 						.collect();
 
-					// find the length of the longest line
-					// (length calculated by utf-8 chars)
-					let mut max = text_lines.iter()
-						.fold(0, |m, l| {
-							let len = UnicodeWidthStr::width(l.as_str());
-							if len > m { len } else { m }
-						});
-
-					// do attachments
-					for att in msg.attachments.iter() {
-						let filename = att.path.split('/')
-							.last()
-							.unwrap_or_default();
-
-						let att_str = format!("Attachment {}: {}",
-							att_temp.len(), filename);
-
-						if att_str.len() > max {
-							max = att_str.len();
-						}
-
-						let att_line = if msg.is_from_me {
-							let space = msg_width - att_str.len();
-							format!("{}{}", " ".repeat(space), att_str)
-						} else {
-							att_str
-						};
-
-						vec.push(
-							MessageLine::new(
-								att_line,
-								MessageLineType::Text,
-								i,
-								msg.is_from_me
-							)
-						);
-						att_temp.push(att.path.to_owned());
-					}
-
-					let space = msg_width - max;
-
-					if !msg.text.is_empty() {
-
-						// add padding for my texts, put into spans
-						let mut lines: Vec<MessageLine> = text_lines.into_iter()
-							.map(|l| {
-								let text = if msg.is_from_me {
-									format!("{}{}", " ".repeat(space), l)
-								} else { l };
-
-								MessageLine::new(
-									text,
-									MessageLineType::Text,
-									i,
-									msg.is_from_me
-								)
-							})
-							.collect();
-
-						vec.append(&mut lines);
-					}
-
-					// add underline so it's pretty
-					let underline = format!("{}{}",
-						if msg.is_from_me {
-							" ".repeat(space)
-						} else {
-							"".to_owned()
-						},
-						underline.as_str().repeat(max)
-					);
-
-					vec.push(
-						MessageLine::new(
-							underline,
-							MessageLineType::Underline,
-							i,
-							msg.is_from_me
-						)
-					);
-
-					vec
+					vec.append(&mut lines);
 				}
-			);
+
+				// add underline so it's pretty
+				let underline = format!(
+					"{}{}",
+					if msg.is_from_me {
+						" ".repeat(space)
+					} else {
+						"".to_owned()
+					},
+					settings.chat_underline.as_str().repeat(max)
+				);
+
+				vec.push(MessageLine::new(
+					underline,
+					MessageLineType::Underline,
+					i,
+					msg.is_from_me,
+				));
+
+				vec
+			});
 
 		// have to have a stored vector of attachments
 		// so that you can access and open them at will
@@ -300,7 +259,7 @@ impl MessagesView {
 		if self.line_list.len() as u16 >= rect.height {
 			self.y_bounds = (
 				self.line_list.len() as u16 - rect.height,
-				self.line_list.len() as u16 - 1
+				self.line_list.len() as u16 - 1,
 			);
 		}
 		self.scroll_none(false);
@@ -315,17 +274,17 @@ impl MessagesView {
 	}
 
 	pub async fn scroll(&mut self, up: bool, distance: u16) {
-
-		if self.messages.is_empty() { return; }
+		if self.messages.is_empty() {
+			return;
+		}
 
 		// up == scrolling to older messages
 		if !up {
-			self.selected_msg = min(
-				self.selected_msg + distance,
-				self.messages.len() as u16 - 1
-			);
+			self.selected_msg = min(self.selected_msg + distance, self.messages.len() as u16 - 1);
 
-			let scroll_opt = self.line_list.iter()
+			let scroll_opt = self
+				.line_list
+				.iter()
 				.position(|m| m.relative_index as u16 > self.selected_msg);
 
 			if let Some(mut scroll) = scroll_opt {
@@ -335,19 +294,19 @@ impl MessagesView {
 					self.y_bounds.0 += scroll as u16 - self.y_bounds.1;
 					self.y_bounds.1 = scroll as u16;
 				}
-			} else { // only if you have the last message selected
+			} else {
+				// only if you have the last message selected
 				let scroll = self.line_list.len() as i32 + 1;
 				self.y_bounds.0 += std::cmp::max(scroll - self.y_bounds.1 as i32, 0) as u16;
 				self.y_bounds.1 = scroll as u16;
 			}
 		} else {
 			// have to convert to signed to prevent overflow
-			self.selected_msg = max(
-				self.selected_msg as i32 - distance as i32,
-				0
-			) as u16;
+			self.selected_msg = max(self.selected_msg as i32 - distance as i32, 0) as u16;
 
-			let scroll_opt = self.line_list.iter()
+			let scroll_opt = self
+				.line_list
+				.iter()
 				.position(|m| m.relative_index as u16 == self.selected_msg);
 
 			if let Some(scroll) = scroll_opt {
@@ -372,8 +331,10 @@ impl MessagesView {
 		tokio::spawn(async move {
 			let mut api = api_clone.write().await;
 
-			let msgs = api.get_messages(&id, None, None, None).await
-				.map(|mut m| { m.reverse(); m });
+			let msgs = api.get_messages(&id, None, None, None).await.map(|mut m| {
+				m.reverse();
+				m
+			});
 
 			if let Err(ref err) = msgs {
 				hint!("couldn't get messages: {}", err);
@@ -392,20 +353,19 @@ impl MessagesView {
 		let old_len = self.messages.len();
 		let api_clone = self.client.clone();
 
-		let chat = if let Ok(state) = STATE.read() {
-			if let Some(chat) = &state.current_chat {
-				chat.to_owned()
-			} else { return }
-		} else { return };
+		let chat = match read_state!().current_chat {
+			Some(ref chat) => chat.to_owned(),
+			_ => return,
+		};
 
 		self.await_state = AwaitState::More;
 
 		tokio::spawn(async move {
 			let mut api = api_clone.write().await;
 
-			let msgs = api.get_messages(
-				&chat, None, Some(old_len as u32), None
-			).await;
+			let msgs = api
+				.get_messages(&chat, None, Some(old_len as u32), None)
+				.await;
 
 			drop(api);
 
@@ -415,7 +375,7 @@ impl MessagesView {
 		});
 	}
 
-	pub async fn new_text(&mut self, msg: Message) {
+	pub async fn new_text(&mut self, msg: Message, settings: &Settings) {
 		// this basically adds the text onto the list, then runs `rerender_list`
 		// but it only rerenders the new text, if that makes sense.
 
@@ -434,18 +394,10 @@ impl MessagesView {
 
 		// show the time display
 		if msg.date - last_timestamp >= 3600000000000 {
-			let date_pad = Utilities::date_pad_string(
-				msg.date,
-				self.last_width as usize - 2
-			);
+			let date_pad = Utilities::date_pad_string(msg.date, self.last_width as usize - 2);
 			let mut spans = vec![
 				MessageLine::blank(i),
-				MessageLine::new(
-					date_pad,
-					MessageLineType::Text,
-					i,
-					msg.is_from_me
-				),
+				MessageLine::new(date_pad, MessageLineType::Text, i, msg.is_from_me),
 				MessageLine::blank(i),
 			];
 
@@ -456,25 +408,22 @@ impl MessagesView {
 		if let Some(send) = &msg.sender {
 			if last.is_none()
 				|| send != last.unwrap().sender.as_ref().unwrap_or(&"".to_owned())
-				|| msg.date - last_timestamp >= 3600000000000 {
-
+				|| msg.date - last_timestamp >= 3600000000000
+			{
 				if msg.date - last_timestamp < 3600000000000 {
 					self.line_list.push(MessageLine::blank(i));
 				}
 
-				self.line_list.push(
-					MessageLine::new(
-						send.to_owned(),
-						MessageLineType::Sender,
-						i,
-						msg.is_from_me
-					)
-				);
+				self.line_list.push(MessageLine::new(
+					send.to_owned(),
+					MessageLineType::Sender,
+					i,
+					msg.is_from_me,
+				));
 			}
 		}
 
-		let opts = textwrap::Options::new(
-			((self.last_width - 2) as f64 * 0.6) as usize);
+		let opts = textwrap::Options::new(((self.last_width - 2) as f64 * 0.6) as usize);
 
 		// split the text into its wrapped lines
 		let text_lines: Vec<String> = textwrap::fill(msg.text.as_str(), opts)
@@ -483,16 +432,18 @@ impl MessagesView {
 			.collect();
 
 		// find the length of the longest line (length calculated by utf-8 chars)
-		let mut max = text_lines.iter()
-			.fold(0, |m, l| {
-				let len = UnicodeWidthStr::width(l.as_str());
-				if len > m { len } else { m }
-			});
+		let mut max = text_lines.iter().fold(0, |m, l| {
+			let len = UnicodeWidthStr::width(l.as_str());
+			if len > m {
+				len
+			} else {
+				m
+			}
+		});
 
 		// do attachments
 		for att in msg.attachments.iter() {
-			let att_str = format!("Attachment {}: {}",
-				self.attachments.len(), att.mime_type);
+			let att_str = format!("Attachment {}: {}", self.attachments.len(), att.mime_type);
 
 			if att_str.len() > max {
 				max = att_str.len();
@@ -505,14 +456,12 @@ impl MessagesView {
 				att_str
 			};
 
-			self.line_list.push(
-				MessageLine::new(
-					att_line,
-					MessageLineType::Text,
-					i,
-					msg.is_from_me
-				)
-			);
+			self.line_list.push(MessageLine::new(
+				att_line,
+				MessageLineType::Text,
+				i,
+				msg.is_from_me,
+			));
 			self.attachments.push(att.path.to_owned());
 		}
 
@@ -520,44 +469,39 @@ impl MessagesView {
 
 		// add padding to my own texts so that they show correctly
 		if !msg.text.is_empty() {
-			let mut lines: Vec<MessageLine> = text_lines.into_iter()
+			let mut lines: Vec<MessageLine> = text_lines
+				.into_iter()
 				.map(|l| {
 					let text = if msg.is_from_me {
 						format!("{}{}", " ".repeat(space), l)
-					} else { l };
+					} else {
+						l
+					};
 
-					MessageLine::new(
-						text,
-						MessageLineType::Text,
-						i,
-						msg.is_from_me
-					)
+					MessageLine::new(text, MessageLineType::Text, i, msg.is_from_me)
 				})
 				.collect();
 
 			self.line_list.append(&mut lines);
 		}
 
-		let underline = if let Ok(set) = SETTINGS.read() {
-			set.chat_underline.to_owned()
-		} else {
-			"▔".to_owned()
-		};
-
 		// add underline so it's pretty
-		let underline = format!("{}{}",
-			if msg.is_from_me { " ".repeat(space) } else { "".to_owned() },
-			underline.as_str().repeat(max)
+		let underline = format!(
+			"{}{}",
+			if msg.is_from_me {
+				" ".repeat(space)
+			} else {
+				"".to_owned()
+			},
+			settings.chat_underline.as_str().repeat(max)
 		);
 
-		self.line_list.push(
-			MessageLine::new(
-				underline,
-				MessageLineType::Underline,
-				i,
-				msg.is_from_me
-			)
-		);
+		self.line_list.push(MessageLine::new(
+			underline,
+			MessageLineType::Underline,
+			i,
+			msg.is_from_me,
+		));
 
 		self.messages.push(msg);
 
@@ -565,10 +509,8 @@ impl MessagesView {
 		// we hide the typing display while my message is loaded in,
 		// then show it again when it finishes loading in
 		if show_typing_again {
-			if let Ok(state) = STATE.read() {
-				if let Some(ref chat) = state.current_chat {
-					self.set_typing(Message::typing(chat)).await;
-				}
+			if let Some(ref chat) = read_state!().current_chat {
+				self.set_typing(Message::typing(chat)).await;
 			}
 		}
 
@@ -578,14 +520,13 @@ impl MessagesView {
 	}
 
 	pub async fn set_typing(&mut self, text: Message) {
-
 		// show a new text at the bottom that says `Typing...`
 		if self.typing_idx.is_none() {
 			let model = MessageLine::new(
 				"Typing...".to_owned(),
 				MessageLineType::Typing,
 				self.messages.len(),
-				false
+				false,
 			);
 			self.line_list.push(model);
 
@@ -618,16 +559,19 @@ impl MessagesView {
 		// Download the attachment to their downloads directory
 
 		if idx >= self.attachments.len() {
-			hint!("cannot get attachment {} (there are only {})",
-				idx, self.attachments.len());
+			hint!(
+				"cannot get attachment {} (there are only {})",
+				idx,
+				self.attachments.len()
+			);
 			return;
 		}
 
 		let mut down_dir = match dirs::download_dir() {
 			Some(dir) => dir,
 			None => {
-				let mut dir =dirs::home_dir()
-					.expect("Can't get download directory or home directory");
+				let mut dir =
+					dirs::home_dir().expect("Can't get download directory or home directory");
 				dir.push("Downloads");
 				dir
 			}
@@ -644,8 +588,11 @@ impl MessagesView {
 						Some(file_loc.to_owned())
 					}
 					None => {
-						hint!("Cannot download file. Please ensure the filename \
-							({}) is valid unicode", name);
+						hint!(
+							"Cannot download file. Please ensure the filename \
+							({}) is valid unicode",
+							name
+						);
 						None
 					}
 				}
@@ -663,12 +610,9 @@ impl MessagesView {
 				let mut api = api_clone.write().await;
 
 				match api.get_attachment(&att_name).await {
-					Ok(data) => {
-						match std::fs::write(&loc, data) {
-							Ok(_) => hint!("downloaded file to {} :)", loc),
-							Err(err) => hint!("Could not write to file at {}: {}",
-								loc, err),
-						}
+					Ok(data) => match std::fs::write(&loc, data) {
+						Ok(_) => hint!("downloaded file to {} :)", loc),
+						Err(err) => hint!("Could not write to file at {}: {}", loc, err),
 					},
 					Err(err) => hint!("could not download file: {}", err),
 				}
@@ -695,7 +639,7 @@ impl MessagesView {
 			Err(err) => {
 				hint!("failed to delete text: {}", err);
 				false
-			},
+			}
 			Ok(_) => {
 				hint!("deleted text :)");
 				true

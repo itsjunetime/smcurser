@@ -1,31 +1,38 @@
-mod settings;
-mod colorscheme;
 mod app;
-mod models;
 mod chats_view;
-mod messages_view;
+mod colorscheme;
 mod input_view;
+mod messages_view;
+mod models;
+mod settings;
 mod state;
 mod utilities;
 
-use std::{
-	sync::{Arc, RwLock},
-	io::stdout,
-	env::args,
-};
+use app::*;
 use lazy_static::*;
 use settings::*;
-use app::*;
 use state::GlobalState;
-use tui::{Terminal, backend::CrosstermBackend};
+use std::{
+	env::args,
+	io::stdout,
+	sync::{Arc, RwLock},
+};
+use tui::{backend::CrosstermBackend, Terminal};
 
 lazy_static! {
 	// set global variables. I know they're theoretically bad practice,
 	// but it's just so easy :/
-	static ref SETTINGS: Arc<RwLock<Settings>> =
-		Arc::new(RwLock::new(Settings::default()));
 	static ref STATE: Arc<RwLock<GlobalState>> =
 		Arc::new(RwLock::new(GlobalState::new()));
+}
+
+#[macro_export]
+macro_rules! read_state {
+	() => {
+		STATE
+			.read()
+			.expect("STATE has been poisoned. Please report this to the developer.")
+	};
 }
 
 #[tokio::main]
@@ -33,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
 	let mut args = args().collect::<Vec<String>>();
 	args.remove(0);
 
-	let mut set = SETTINGS.write().expect("Couldn't open settings");
+	let mut set = Settings::default();
 
 	set.parse_args(args, false, true);
 
@@ -48,26 +55,22 @@ async fn main() -> anyhow::Result<()> {
 	// if they have specified no host, then exit
 	// (since you need a host to communicate with)
 	if set.rest_host.is_empty() && set.remote_url.is_none() {
-		eprintln!(
-			"\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to"
-		);
+		eprintln!("\x1b[31;1mERROR:\x1b[0m Please enter a host to connect to");
 		return Ok(());
 	}
-
-	drop(set);
 
 	let stdout = stdout();
 	let backend = CrosstermBackend::new(stdout);
 	let mut terminal = Terminal::new(backend)?;
 
 	// go!
-	let main_app = MainApp::new().await;
+	let main_app = MainApp::new(set).await;
 	match main_app {
 		Err(err) => {
 			eprintln!("Failed to create main app: {}", err);
 			Err(err)
 		}
-		Ok(mut app) => app.main_loop(&mut terminal).await
+		Ok(mut app) => app.main_loop(&mut terminal).await,
 	}
 }
 

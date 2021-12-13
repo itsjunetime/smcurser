@@ -2,16 +2,21 @@ pub struct MessageLine {
 	pub text: String,
 	pub message_type: MessageLineType,
 	pub relative_index: usize,
-	pub from_me: bool
+	pub from_me: bool,
 }
 
 impl MessageLine {
-	pub fn new(text: String, message_type: MessageLineType, relative_index: usize, from_me: bool) -> MessageLine {
+	pub fn new(
+		text: String,
+		message_type: MessageLineType,
+		relative_index: usize,
+		from_me: bool,
+	) -> MessageLine {
 		MessageLine {
 			text,
 			message_type,
 			relative_index,
-			from_me
+			from_me,
 		}
 	}
 

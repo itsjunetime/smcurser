@@ -1,25 +1,19 @@
-use crate::{
-	*,
-	app::AwaitState
+use crate::{app::AwaitState, *};
+use sdk::{models::*, *};
+use std::{
+	cmp::{max, min, Ordering},
+	io::Stdout,
 };
-use sdk::{
-	models::*,
-	*,
-};
+use tokio::sync::RwLock;
 use tui::{
 	layout::Rect,
-	text::{Span, Spans},
-	widgets::{Block, Borders, Paragraph, BorderType},
 	style::Style,
 	terminal::Frame,
-};
-use std::{
-	cmp::{min, max, Ordering},
-	io::Stdout,
+	text::{Span, Spans},
+	widgets::{Block, BorderType, Borders, Paragraph},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-use tokio::sync::RwLock;
 
 pub struct ChatsView {
 	pub scroll: u16,
@@ -29,13 +23,11 @@ pub struct ChatsView {
 	pub last_height: u16,
 	pub last_selected: Option<usize>,
 	pub client: Arc<RwLock<APIClient>>,
-	pub await_state: AwaitState
+	pub await_state: AwaitState,
 }
 
 impl ChatsView {
-	pub async fn new(
-		client: Arc<RwLock<APIClient>>
-	) -> anyhow::Result<ChatsView> {
+	pub async fn new(client: Arc<RwLock<APIClient>>) -> ChatsView {
 		let api_clone = client.clone();
 
 		tokio::spawn(async move {
@@ -56,7 +48,7 @@ impl ChatsView {
 
 		hint!("loading in initial chats...");
 
-		Ok(ChatsView {
+		ChatsView {
 			scroll: 0,
 			chats_list: Vec::new(),
 			last_width: 0,
@@ -65,157 +57,149 @@ impl ChatsView {
 			await_state: AwaitState::Replace,
 			chats: Vec::new(),
 			client,
-		})
+		}
 	}
 
 	pub fn draw_view(
 		&mut self,
 		frame: &mut Frame<CrosstermBackend<Stdout>>,
 		rect: Rect,
-		is_selected: bool
+		is_selected: bool,
+		settings: &Settings,
 	) {
 		// draws the view for this specific struct
+		let colorscheme = &settings.colorscheme;
 
-		if let Ok(set) = SETTINGS.read() {
-			let colorscheme = colorscheme::Colorscheme::from(&set.colorscheme);
+		// conditionally rerender the strings that make up the view;
+		// better performance
+		if rect.width != self.last_width || rect.height != self.last_height {
+			self.rerender_list(rect, settings);
 
-			// conditionally rerender the strings that make up the view;
-			// better performance
-			if rect.width != self.last_width || rect.height != self.last_height {
-				self.rerender_list(rect);
-
-				self.last_width = rect.width;
-				self.last_height = rect.height;
-			}
-
-			// create the list of spans, which are what is printed with `tui`.
-			let item_list: Vec<Spans> = self.chats_list.iter()
-				.fold(Vec::new(), |mut s, c| {
-					// that's where the symbol will be
-					let (num, rest) = c.split_at(4);
-					let symbol = rest.chars().next().unwrap_or(' ');
-
-					let rest_style = if symbol == set.current_chat_indicator {
-						Style::default().fg(colorscheme.text_color)
-							.add_modifier(tui::style::Modifier::BOLD)
-					} else {
-						Style::default().fg(colorscheme.text_color)
-					};
-
-					// conditionally color the symbol and create its span
-					let spans = vec![
-						Span::styled(
-							num,
-							Style::default().fg(colorscheme.text_color)
-						),
-						match symbol {
-							_ if symbol == set.current_chat_indicator =>
-								Span::styled(
-									symbol.to_string(),
-									Style::default()
-										.fg(colorscheme.chat_indicator)
-								),
-							_ if symbol == set.unread_chat_indicator =>
-								Span::styled(
-									symbol.to_string(),
-									Style::default()
-										.fg(colorscheme.unread_indicator)
-								),
-							_ => Span::raw(" "),
-						},
-						Span::styled(
-							rest.replacen(symbol, "", 1),
-							rest_style
-						),
-					];
-
-					// add spacing and line of text
-					s.push(Spans::from(vec![Span::raw("")]));
-					s.push(Spans::from(spans));
-					s
-				});
-
-			// create the border for the view
-			let chats_border = Block::default()
-				.borders(Borders::ALL)
-				.title(set.chats_title.as_str())
-				.border_type(BorderType::Rounded)
-				.border_style(Style::default().fg(
-						if is_selected {
-							colorscheme.selected_box
-						} else {
-							colorscheme.unselected_box
-						}));
-
-			// create the actual view that will be printed
-			let chats_widget = Paragraph::new(item_list)
-				.block(chats_border)
-				.scroll((self.scroll * 2, 0));
-
-			// render it!
-			frame.render_widget(chats_widget, rect);
+			self.last_width = rect.width;
+			self.last_height = rect.height;
 		}
+
+		// create the list of spans, which are what is printed with `tui`.
+		let item_list: Vec<Spans> = self.chats_list.iter().fold(Vec::new(), |mut s, c| {
+			// that's where the symbol will be
+			let (num, rest) = c.split_at(4);
+			let symbol = rest.chars().next().unwrap_or(' ');
+
+			let rest_style = if symbol == settings.current_chat_indicator {
+				Style::default()
+					.fg(colorscheme.text_color)
+					.add_modifier(tui::style::Modifier::BOLD)
+			} else {
+				Style::default().fg(colorscheme.text_color)
+			};
+
+			// conditionally color the symbol and create its span
+			let spans = vec![
+				Span::styled(num, Style::default().fg(colorscheme.text_color)),
+				match symbol {
+					_ if symbol == settings.current_chat_indicator => Span::styled(
+						symbol.to_string(),
+						Style::default().fg(colorscheme.chat_indicator),
+					),
+					_ if symbol == settings.unread_chat_indicator => Span::styled(
+						symbol.to_string(),
+						Style::default().fg(colorscheme.unread_indicator),
+					),
+					_ => Span::raw(" "),
+				},
+				Span::styled(rest.replacen(symbol, "", 1), rest_style),
+			];
+
+			// add spacing and line of text
+			s.push(Spans::from(vec![Span::raw("")]));
+			s.push(Spans::from(spans));
+			s
+		});
+
+		// create the border for the view
+		let chats_border = Block::default()
+			.borders(Borders::ALL)
+			.title(settings.chats_title.as_str())
+			.border_type(BorderType::Rounded)
+			.border_style(Style::default().fg(if is_selected {
+				colorscheme.selected_box
+			} else {
+				colorscheme.unselected_box
+			}));
+
+		// create the actual view that will be printed
+		let chats_widget = Paragraph::new(item_list)
+			.block(chats_border)
+			.scroll((self.scroll * 2, 0));
+
+		// render it!
+		frame.render_widget(chats_widget, rect);
 	}
 
-	pub fn rerender_list(&mut self, rect: Rect) {
+	pub fn rerender_list(&mut self, rect: Rect, settings: &Settings) {
 		let max_len: usize = (rect.width as u64 - 8) as usize;
 
-		if let Ok(set) = SETTINGS.read() {
+		// iterate over all of them and create the list of strings
+		// that will be printed
+		self.chats_list = self
+			.chats
+			.iter()
+			.enumerate()
+			.map(|(i, c)| {
+				// get symbol for the chat that will represent whether
+				// it has an unread message, is selected, or neither.
+				let symbol = if c.is_selected {
+					settings.current_chat_indicator
+				} else if c.has_unread {
+					settings.unread_chat_indicator
+				} else {
+					' '
+				};
 
-			// iterate over all of them and create the list of strings
-			// that will be printed
-			self.chats_list = self.chats.iter()
-				.enumerate()
-				.map(|(i, c)| {
-					// get symbol for the chat that will represent whether
-					// it has an unread message, is selected, or neither.
-					let symbol = if c.is_selected {
-						set.current_chat_indicator
-					} else if c.has_unread {
-						set.unread_chat_indicator
+				let display_len = UnicodeWidthStr::width(c.display_name.as_str());
+
+				// only show what part of the name will fit, with ellipsis.
+				let name = if display_len > max_len {
+					let graphemes = c.display_name.graphemes(true).collect::<Vec<&str>>();
+
+					let num_graphemes = graphemes.iter().fold(0, |n, g| {
+						if n >= max_len - 3 {
+							return n;
+						}
+						let total = UnicodeWidthStr::width(*g) + n;
+						if total > max_len - 3 {
+							n
+						} else {
+							n + 1
+						}
+					});
+
+					format!("{}...", &graphemes[..num_graphemes].join(""))
+				} else {
+					c.display_name.to_owned()
+				};
+
+				// index; number that they will have to use to select the chat
+				let idx = format!(
+					"{}{}{}",
+					if i < 100 {
+						" "
 					} else {
-						' '
-					};
-
-					let display_len = UnicodeWidthStr::width(
-						c.display_name.as_str());
-
-					// only show what part of the name will fit, with ellipsis.
-					let name = if display_len > max_len {
-						let graphemes = c.display_name.graphemes(true)
-							.collect::<Vec<&str>>();
-
-						let num_graphemes = graphemes.iter()
-							.fold(0, |n, g| {
-								if n >= max_len - 3 {
-									return n;
-								}
-								let total = UnicodeWidthStr::width(*g) + n;
-								if total > max_len - 3 {
-									n
-								} else {
-									n + 1
-								}
-							});
-
-						format!("{}...", &graphemes[..num_graphemes].join(""))
+						""
+					},
+					if i < 10 {
+						" "
 					} else {
-						c.display_name.to_owned()
-					};
+						""
+					},
+					i
+				);
+				// I'm just gonna hope that nobody is going 1000 chats deep :/
 
-					// index; number that they will have to use to select the chat
-					let idx = format!("{}{}{}",
-						if i < 100 { " " } else { "" },
-						if i < 10 { " " } else { "" },
-						i
-					);
-					// I'm just gonna hope that nobody is going 1000 chats deep :/
-
-					// like '  0 > John Smith         '
-					format!("{} {} {}", idx, symbol, name)
-				})
-				.collect();
-		}
+				// like '  0 > John Smith         '
+				format!("{} {} {}", idx, symbol, name)
+			})
+			.collect();
 	}
 
 	pub async fn scroll(&mut self, up: bool, distance: u16) {
@@ -284,7 +268,9 @@ impl ChatsView {
 			if let Some(idx) = chat {
 				// remove it from the list, set to unread.
 				let mut old_chat = self.chats.remove(idx);
-				if !item.is_from_me { old_chat.has_unread = true; }
+				if !item.is_from_me {
+					old_chat.has_unread = true;
+				}
 
 				// last_selected specifies the conversation whose messages
 				// are currently being viewed
@@ -298,14 +284,14 @@ impl ChatsView {
 							// also set it back to unread since you
 							// currently have it selected
 							old_chat.has_unread = false;
-						},
+						}
 						Ordering::Greater => {
 							// if the new text conversation will be moved to a
 							// place before the currently selected conversation in
 							// the list, increase the currently selected index.
 							self.last_selected = Some(ls + 1);
 						}
-						_ => ()
+						_ => (),
 					}
 				}
 
@@ -359,7 +345,7 @@ impl ChatsView {
 		ret
 	}
 
-	pub async fn reload_chats(&mut self)  {
+	pub async fn reload_chats(&mut self) {
 		let api_clone = self.client.clone();
 		self.await_state = AwaitState::Replace;
 

@@ -39,7 +39,7 @@ impl GlobalState {
 			awaiting_new_convo: false,
 			outgoing_websocket_msg: None,
 			websocket_state: WebSocketState::Disconnected,
-			battery_status: BatteryStatus::Dead
+			battery_status: BatteryStatus::Dead,
 		}
 	}
 
@@ -48,7 +48,7 @@ impl GlobalState {
 			BatteryStatus::Full => "100%, full".to_owned(),
 			BatteryStatus::Charging(x) => format!("{}%, charging", x),
 			BatteryStatus::Unplugged(x) => format!("{}%, unplugged", x),
-			BatteryStatus::Dead => "0%, dead".to_owned()
+			BatteryStatus::Dead => "0%, dead".to_owned(),
 		}
 	}
 }
@@ -64,5 +64,5 @@ pub enum BatteryStatus {
 	Full,
 	Charging(u8),
 	Unplugged(u8),
-	Dead
+	Dead,
 }

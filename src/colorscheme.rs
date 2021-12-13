@@ -1,6 +1,5 @@
-use tui::style::Color;
 use std::collections::HashMap;
-use crate::SETTINGS;
+use tui::style::Color;
 
 #[derive(Clone)]
 pub struct Colorscheme {
@@ -16,20 +15,18 @@ pub struct Colorscheme {
 	pub hints_box: Color,
 }
 
-impl<T: Into<String>> From<T> for Colorscheme {
-	fn from(val: T) -> Self {
+impl Colorscheme {
+	pub fn with_name<T: Into<String>>(name: T, extra: &Option<Vec<Colorscheme>>) -> Colorscheme {
 		// yeahhh... ugly. Whatcha gonna do
 
-		let name: String = val.into();
+		let name: String = name.into();
 
-		if let Ok(set) = SETTINGS.read() {
-			if let Some(ref colors) = set.custom_colorschemes {
-				if let Some(cl) = colors.iter().find(|c| c.name == name) {
-					return cl.to_owned();
-				}
-			}
+		if let Some(cl) = extra
+			.as_ref()
+			.and_then(|e| e.iter().find(|c| c.name == name))
+		{
+			return cl.to_owned();
 		}
-
 
 		let vals = match name.as_str() {
 			"rose-pine" => [
@@ -65,7 +62,8 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				[248, 248, 242],
 				[80, 250, 123],
 			],
-			_ => [ // forest
+			_ => [
+				// forest
 				[36, 139, 84],
 				[28, 102, 83],
 				[101, 215, 253],
@@ -74,7 +72,7 @@ impl<T: Into<String>> From<T> for Colorscheme {
 				[30, 141, 199],
 				[245, 111, 66],
 				[255, 255, 255],
-				[195, 137, 138]
+				[195, 137, 138],
 			],
 		};
 
@@ -89,26 +87,22 @@ impl<T: Into<String>> From<T> for Colorscheme {
 			unread_indicator: Color::Rgb(vals[6][0], vals[6][1], vals[6][2]),
 			text_color: Color::Rgb(vals[7][0], vals[7][1], vals[7][2]),
 			hints_box: Color::Rgb(vals[8][0], vals[8][1], vals[8][2]),
- 		}
+		}
 	}
-}
 
-impl Colorscheme {
 	// this does no validation at all. Will panic if anything is off
 	pub fn from_specs(name: String, map: HashMap<String, Vec<u8>>) -> Colorscheme {
-
-		let (sb, ub, mu, tu, su, ci, ui, tc, hb) =
-			(
-				&map["selected_box"],
-				&map["unselected_box"],
-				&map["my_underline"],
-				&map["their_underline"],
-				&map["selected_underline"],
-				&map["chat_indicator"],
-				&map["unread_indicator"],
-				&map["text_color"],
-				&map["hints_box"]
-			);
+		let (sb, ub, mu, tu, su, ci, ui, tc, hb) = (
+			&map["selected_box"],
+			&map["unselected_box"],
+			&map["my_underline"],
+			&map["their_underline"],
+			&map["selected_underline"],
+			&map["chat_indicator"],
+			&map["unread_indicator"],
+			&map["text_color"],
+			&map["hints_box"],
+		);
 
 		Colorscheme {
 			name,

@@ -1,0 +1,4 @@
+hard_tabs = true
+single_line_if_else_max_width = 0
+use_field_init_shorthand = true
+use_try_shorthand = true
