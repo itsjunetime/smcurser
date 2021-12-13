@@ -34,7 +34,7 @@ cargo build --release
 The compiled binary will reside at `./target/release/smcurser`
 
 ## To run
-First, get a copy of [SMServer](https://github.com/ianwelker/smserver) and start that running. \
+First, get a copy of [SMServer](https://github.com/iandwelker/smserver) and start that running. \
 Then, if youre on linux or macOS, run:
 ```sh
 smcurser --host "<your phone's ip address>"
