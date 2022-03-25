@@ -7,7 +7,6 @@ use std::{
 	cmp::{max, min},
 	io::{Error, Stdout},
 	mem::take,
-	sync::mpsc,
 };
 use tokio::sync::RwLock;
 use tui::{
@@ -118,7 +117,7 @@ impl MainApp {
 			.with_timeout(set.timeout as usize)
 			.with_secure(set.secure);
 
-		let (sender, receiver) = mpsc::sync_channel(0);
+		let (sender, receiver) = crossbeam_channel::unbounded();
 
 		MainApp::spawn_receiver(receiver);
 
@@ -146,7 +145,7 @@ impl MainApp {
 		})
 	}
 
-	pub fn spawn_receiver(receiver: mpsc::Receiver<sdk::socket::SocketResponse>) {
+	pub fn spawn_receiver(receiver: crossbeam_channel::Receiver<sdk::socket::SocketResponse>) {
 		tokio::spawn(async move {
 			while let Ok(msg) = receiver.recv() {
 				match msg.command {
